@@ -1,0 +1,395 @@
+{
+  "lastUpdated": "2025-02-26T10:53:33.809Z",
+  "libraries": [
+    {
+      "id": "385787",
+      "name": "J6-SS-P0114-Ahmed bakr",
+      "apiKey": "2e480621-efbc-4dc6-88882ee04e61-baaa-4870",
+      "collections": [
+        {
+          "id": "00b5938f-bc9a-44f4-ab7f-2aee471b0d5a",
+          "name": "RE-T1-2025-QV"
+        },
+        {
+          "id": "8d6222d4-9dc5-4e5d-85d5-c4ba30f9f5f1",
+          "name": "T1-2025-QV"
+        },
+        {
+          "id": "f18cdccf-3c4a-4049-ad5e-d8f35d83e56f",
+          "name": "T1-2025"
+        },
+        {
+          "id": "96a6968a-3c54-4e05-88b2-d4f7d8d69fe8",
+          "name": "RE-T2-2025-QV"
+        },
+        {
+          "id": "70f31aa0-b5bb-41dd-87f5-f63bf46ec909",
+          "name": "RE-2025"
+        },
+        {
+          "id": "968d6447-aec6-449d-a8de-0f530614adc9",
+          "name": "T2-2025-QV"
+        },
+        {
+          "id": "f256f8ef-c5a6-42ad-a7c1-ba89d6ae6a00",
+          "name": "T2-2025"
+        }
+      ]
+    },
+    {
+      "id": "384744",
+      "name": "M1-AR-P0099-Ibrahim Ahmed ",
+      "apiKey": "0d129345-096b-4a97-8aec619a9f83-0fff-4859",
+      "collections": [
+        {
+          "id": "5b852f66-1408-4a09-ac37-22161a8fe673",
+          "name": "RE-T1-2025-QV"
+        },
+        {
+          "id": "ee2b9dd7-5590-4200-851e-f290b82c8fc3",
+          "name": "T1-2025-QV"
+        },
+        {
+          "id": "5e637dee-9b0f-4085-b572-95bde95412cc",
+          "name": "T1-2025"
+        },
+        {
+          "id": "81fb33da-1a9a-4c19-9239-c0c8be1b5b56",
+          "name": "RE-T2-2025-QV"
+        },
+        {
+          "id": "5ac961c1-0925-4ed0-8643-5aed2f4ddd04",
+          "name": "T2-2025"
+        },
+        {
+          "id": "9090bd5a-f3d0-486c-aa80-0decbf391c85",
+          "name": "T2-2025-QV"
+        },
+        {
+          "id": "b1f44ccb-b425-4786-8d0a-cc8526618ed9",
+          "name": "RE-2025"
+        }
+      ]
+    },
+    {
+      "id": "385784",
+      "name": "M2-MATH-EN-P0083-Ahmed Salah",
+      "apiKey": "f31dcfa2-fd8a-4c96-a4bcc90e8c09-6dfb-4ae7",
+      "collections": [
+        {
+          "id": "949f693a-97d0-44e3-8128-4a3140c87c1d",
+          "name": "بب"
+        },
+        {
+          "id": "f95c8cf6-c5a5-4c8f-baa4-de2463244d0a",
+          "name": "T1-2025"
+        },
+        {
+          "id": "f839935a-1677-4db6-a13c-a620c72f21b6",
+          "name": "T1-2025-QV"
+        },
+        {
+          "id": "ada841b0-01d6-467b-abdf-9cba2db854cf",
+          "name": "RE-T2-2025-QV"
+        },
+        {
+          "id": "1bffc515-47ca-4c45-99a4-d5d84711929c",
+          "name": "RE-2025"
+        },
+        {
+          "id": "72873c5f-57f6-4083-9026-c51a82c0a25f",
+          "name": "T2-2025-QV"
+        },
+        {
+          "id": "426d123f-46ab-4686-86a2-fc48509a6956",
+          "name": "T2-2025"
+        },
+        {
+          "id": "83ed52c5-805e-4492-8d92-5994ea52f39d",
+          "name": "RE-T1-2025-QV"
+        }
+      ]
+    },
+    {
+      "id": "385788",
+      "name": "M2-SCI-AR-P0078-Muslim Elsayed",
+      "apiKey": "0a1506b8-ff89-4ff2-b7fdf5bd8eeb-6e39-4753",
+      "collections": [
+        {
+          "id": "bc966fb9-48ba-47a1-a5c0-2000c2943371",
+          "name": "T1-2025"
+        },
+        {
+          "id": "9c286587-af41-46e9-ad1b-b9d0f10248bb",
+          "name": "RE-T2-2025-QV"
+        },
+        {
+          "id": "91dd44bb-92ee-4a59-bd88-164674776077",
+          "name": "RE-T2-2025-QV"
+        },
+        {
+          "id": "ad51e1bc-ce43-4d03-a5cd-27de8faba8f9",
+          "name": "RE-2025"
+        },
+        {
+          "id": "85a9da20-04b6-408b-9390-1c4f7c31baa1",
+          "name": "T2-2025"
+        },
+        {
+          "id": "2432658a-9d23-4df0-9c2e-f5ae18b1706e",
+          "name": "RE-T1-2025-QV"
+        },
+        {
+          "id": "41669abc-c1ca-4e59-af0e-c51cbd93fa24",
+          "name": "T1-2025-QV"
+        }
+      ]
+    },
+    {
+      "id": "384742",
+      "name": "M2-SS-P0079-Mahmoud Kotb",
+      "apiKey": "ba2e12ab-e799-4d39-944235c12244-0904-4e89",
+      "collections": [
+        {
+          "id": "e1f0a4a2-2552-4849-b413-ff8e4d0a5195",
+          "name": "T1-2025-QV"
+        },
+        {
+          "id": "2df45eae-a826-40b9-8f9f-4d3ba77c5db4",
+          "name": "T1-2025"
+        },
+        {
+          "id": "16e34147-827d-42ab-98bd-e0a2196398e7",
+          "name": "RE-T2-2025-QV"
+        },
+        {
+          "id": "e001c2d5-fb34-43be-92a6-c3c8d9de1e1c",
+          "name": "RE-2025"
+        },
+        {
+          "id": "2810a766-7a8a-4496-badc-d2b983897814",
+          "name": "T2-2025"
+        },
+        {
+          "id": "fee8fff5-2dc4-48de-b373-b1ea6410c53b",
+          "name": "RE-T1-2025-QV"
+        },
+        {
+          "id": "e7e5bff6-c58d-4dba-b9fc-bbb13a24dd87",
+          "name": "T2-2025-QV"
+        }
+      ]
+    },
+    {
+      "id": "385789",
+      "name": "S1-HX-P0110-Hazem Abdallah",
+      "apiKey": "d09c20b1-19d9-4cae-a77814dcbbb3-e0f7-4e4b",
+      "collections": [
+        {
+          "id": "fcd7a7f7-3362-4351-a3ff-91cbbded57bd",
+          "name": "T1-2025-QV"
+        },
+        {
+          "id": "41229604-1f4a-4419-975e-02334fcb00d1",
+          "name": "RE-T2-2025-QV"
+        },
+        {
+          "id": "313c9fab-92de-44c7-bce9-7659b3505f81",
+          "name": "RE-2025"
+        },
+        {
+          "id": "0aa4dab0-d068-4be2-9ade-2d1f0e47b7dd",
+          "name": "T2-2025-QV"
+        },
+        {
+          "id": "8d428247-4190-4155-a209-c95ceda9bac3",
+          "name": "T2-2025"
+        },
+        {
+          "id": "4bcc1818-460f-444b-b0db-b7b5a17ca10e",
+          "name": "RE-T1-2025-QV"
+        },
+        {
+          "id": "f4a0b9cc-2ff4-4570-90af-e5092a50dd0c",
+          "name": "T1-2025"
+        }
+      ]
+    },
+    {
+      "id": "385790",
+      "name": "S1-PHYS-EN-Shady Elsharkawy",
+      "apiKey": "01c3a3f0-148d-487f-b7443012bcdf-6688-4c3a",
+      "collections": [
+        {
+          "id": "ec418463-0dcb-4c43-a64b-d0dbc8450779",
+          "name": "T1-2025-QV"
+        },
+        {
+          "id": "0ca73eed-ad18-4fb4-90e2-7348f14216d4",
+          "name": "T1-2025"
+        },
+        {
+          "id": "90d8b705-8084-4569-b46c-ec0663ada110",
+          "name": "RE-T2-2025-QV"
+        },
+        {
+          "id": "12815734-a2f4-462f-8890-6a910d8ef85d",
+          "name": "RE-2025"
+        },
+        {
+          "id": "d8efe5bd-288b-42b8-91a0-0eff38e0a272",
+          "name": "T2-2025-QV"
+        },
+        {
+          "id": "9e6654e8-6ec7-4823-86f1-4f5d43bc9843",
+          "name": "T2-2025"
+        },
+        {
+          "id": "96e2d982-0a06-4453-bffe-b124973c52dc",
+          "name": "RE-T1-2025-QV"
+        }
+      ]
+    },
+    {
+      "id": "385791",
+      "name": "S2-MATH-EN-P0032-Shady Elsharkawy",
+      "apiKey": "5d690eb4-4874-48de-8a39418d3919-3b20-471a",
+      "collections": [
+        {
+          "id": "e48d5363-d896-4102-9e8f-6d324343e4fe",
+          "name": "T1-2025-QV"
+        },
+        {
+          "id": "153143a5-a13e-41f5-b6fd-ef962f8f1af2",
+          "name": "T1-2025"
+        },
+        {
+          "id": "68ba7586-d013-4195-9879-2fa9f1c6af8a",
+          "name": "RE-T2-2025-QV"
+        },
+        {
+          "id": "ba6d7113-bbea-483c-a183-6cccd9a05326",
+          "name": "RE-2025"
+        },
+        {
+          "id": "b21a93aa-65d3-430f-a8eb-2acce36c423b",
+          "name": "T2-2025-QV"
+        },
+        {
+          "id": "ea72e955-7499-417e-b038-c5e1c459a2f4",
+          "name": "T2-2025"
+        },
+        {
+          "id": "43564697-7e7c-40f1-8d74-89c88c367017",
+          "name": "RE-T1-2025-QV"
+        }
+      ]
+    },
+    {
+      "id": "385794",
+      "name": "S2-PHYS-AR-P0053-Mohamed Samir",
+      "apiKey": "83c80a83-e778-4f6c-adaa612916ab-6e2b-4274",
+      "collections": [
+        {
+          "id": "0e588157-ef36-4884-9572-a547672699c0",
+          "name": "T1-2025-QV"
+        },
+        {
+          "id": "847fa7d1-4cff-48e8-a8be-c60bc2203a88",
+          "name": "T1-2025"
+        },
+        {
+          "id": "0b29c245-5899-44e1-810b-c66aa8339db2",
+          "name": "RE-T2-2025-QV"
+        },
+        {
+          "id": "11fb1d39-2125-46e7-9a2f-a89c572790cb",
+          "name": "RE-2025"
+        },
+        {
+          "id": "bd4c3126-2453-4ace-b83c-0e17a6829f8d",
+          "name": "T2-2025-QV"
+        },
+        {
+          "id": "d20c54f6-dbce-43ac-915e-6f46aae890bc",
+          "name": "T2-2025"
+        },
+        {
+          "id": "6e7b1ebf-2129-4837-8171-4fe9da61bf9d",
+          "name": "RE-T1-2025-QV"
+        }
+      ]
+    },
+    {
+      "id": "385795",
+      "name": "S3-GEOG-P0030-Mohamed Abo El Komsan",
+      "apiKey": "7076cd53-9fcb-49c9-bc2918cd1053-d979-4d83",
+      "collections": [
+        {
+          "id": "86b6184d-b883-4baf-8372-6ad1288543b5",
+          "name": "T1-2025-QV"
+        },
+        {
+          "id": "1ca0231f-0cbe-423b-b9fe-63e5ab3295e4",
+          "name": "T1-2025"
+        },
+        {
+          "id": "6082fc7a-6926-4514-a73c-12dbdcedb3d7",
+          "name": "RE-T2-2025-QV"
+        },
+        {
+          "id": "e82f6ecd-46d2-4b52-8bdd-6ae595b45319",
+          "name": "RE-2025"
+        },
+        {
+          "id": "e33fdeee-de88-48a3-9181-1c53a474d043",
+          "name": "T2-2025-QV"
+        },
+        {
+          "id": "e892349a-1a0e-4615-a8b7-2ff56cf01614",
+          "name": "T2-2025"
+        },
+        {
+          "id": "d670e7d4-a16e-4715-a20a-157bb033f5d1",
+          "name": "RE-T1-2025-QV"
+        }
+      ]
+    },
+    {
+      "id": "385797",
+      "name": "S3-HX-P0034-Helmy Mohamed",
+      "apiKey": "f66e4f29-499e-4841-b9be87dd715e-b146-41a3",
+      "collections": [
+        {
+          "id": "9d3a61c6-d70c-4af5-b443-9965aaf399fe",
+          "name": "T1-2025-QV"
+        },
+        {
+          "id": "17ffa466-3f34-4798-b331-66a77d35bf89",
+          "name": "T1-2025"
+        },
+        {
+          "id": "9c4fdbc2-457a-49e0-a558-94545f0ccf50",
+          "name": "RE-T2-2025-QV"
+        },
+        {
+          "id": "e153a1f5-d6c1-469e-b6e6-8c1193b29a64",
+          "name": "RE-2025"
+        },
+        {
+          "id": "5b8931af-e316-4965-b55e-78c980766137",
+          "name": "T2-2025-QV"
+        },
+        {
+          "id": "df3be17d-971d-4981-8ba7-5c54d960bcbf",
+          "name": "T2-2025"
+        },
+        {
+          "id": "7311caf8-0b47-4bab-a533-4e67dc7550ab",
+          "name": "RE-T1-2025-QV"
+        }
+      ]
+    }
+  ],
+  "mainApiKey": "b19c9b9a-5d1a-438b-8074-20c2e2961ee19a014e14-83ad-4acc-8c0e-f1d744abb546"
+}

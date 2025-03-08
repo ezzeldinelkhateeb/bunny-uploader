@@ -1,11 +1,27 @@
+import { LibraryInfo } from '../types/library';
+
 export interface ParsedFilename {
   type: "RE" | "QV" | "FULL";
   academicYear: string;
   term: string;
+  unit?: string;
+  lesson?: string;
   branch: string;
   teacherCode: string;
   teacherName: string;
   lessonName: string;
+  classNumber?: string;
+  questionNumber?: string;
+}
+
+export function normalizeString(str: string): string {
+  return str
+    .replace(/\s+/g, ' ')
+    .replace(/-+/g, '-')
+    .trim()
+    .normalize('NFKD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .toLowerCase();
 }
 
 export function parseFilename(filename: string): {
@@ -13,20 +29,18 @@ export function parseFilename(filename: string): {
   error?: string;
 } {
   try {
-    // Remove file extension
-    const nameWithoutExt = filename.replace(/\.[^/.]+$/, "");
-
-    // Original regex pattern to restore previous functionality
-    const pattern =
-      /^(?:(RE-)?)?([JSM][1-6])-(T[12])-(U[0-9])-(L[0-9])-([A-Z]+)-([P][0-9]{4})-([^-]+)--\{(.+?)\}(?:-Q[0-9]+)?$/;
+    const nameWithoutExt = filename.replace(/\.[^/.]+$/, "").trim();
+    
+    // نمط أكثر مرونة للتعامل مع الاختلافات
+    const pattern = /^(?:(RE)-)?([JSM][1-6])(?:-+)?(?:T([12]))?(?:-+)?(?:U(\d+))?(?:-+)?(?:L(\d+))?(?:-+)?([A-Z]+(?:-[A-Z]+)*)-([P]\d{4})-([^-]+?)(?:-C(\d+))?(?:--?)?\{([^}]+)\}(?:-Q(\d+))?$/i;
+    
     const match = nameWithoutExt.match(pattern);
 
     if (!match) {
       console.warn(`Failed to match filename: ${filename}`);
       return {
         parsed: null,
-        error:
-          "Invalid filename format. Expected format: [RE-]<Year><Number>-T<1|2>-U<Number>-L<Number>-<Subject>-P<Number>-<TeacherName>--{<LessonName>}[-Q<Number>]",
+        error: "Invalid filename format"
       };
     }
 
@@ -34,148 +48,139 @@ export function parseFilename(filename: string): {
       ,
       isRevision,
       academicYear,
-      term,
+      termNum,
       unit,
       lesson,
       branch,
       teacherCode,
       teacherName,
+      classNumber,
       lessonName,
+      questionNumber
     ] = match;
 
-    // Log parsed components for debugging
-    console.log("Parsed filename components:", {
-      isRevision,
-      academicYear,
-      term,
-      unit,
-      lesson,
-      branch,
-      teacherCode,
-      teacherName,
-      lessonName,
-    });
-
-    // Ensure required fields are not empty
-    if (!branch || !teacherCode || !teacherName) {
-      return {
-        parsed: null,
-        error: `Invalid filename components for ${filename}: branch=${branch}, teacherCode=${teacherCode}, teacherName=${teacherName}`,
-      };
-    }
-
-    // Determine type based on filename
-    let type: ParsedFilename["type"] = "FULL";
-    if (isRevision) type = "RE";
-    else if (nameWithoutExt.includes("-Q")) type = "QV";
+    // تحسين معالجة اسم المادة واللغة
+    const branchParts = branch.split('-');
+    const mainBranch = branchParts[0];
+    const lang = branchParts[1] || '';
 
     return {
       parsed: {
-        type,
-        academicYear,
-        term,
-        branch: branch.toUpperCase(),
-        teacherCode,
-        teacherName,
-        lessonName,
-      },
+        type: isRevision ? "RE" : (questionNumber ? "QV" : "FULL"),
+        academicYear: academicYear.toUpperCase(),
+        term: `T${termNum || "1"}`,
+        unit: unit ? `U${unit}` : undefined,
+        lesson: lesson ? `L${lesson}` : undefined,
+        branch: `${mainBranch}${lang ? `-${lang}` : ''}`,
+        teacherCode: teacherCode.toUpperCase(),
+        teacherName: teacherName.trim(),
+        lessonName: lessonName.trim(),
+        classNumber,
+        questionNumber
+      }
     };
   } catch (error) {
     console.error("Error parsing filename:", error);
     return {
       parsed: null,
-      error:
-        "Error parsing filename: " +
-        (error instanceof Error ? error.message : String(error)),
+      error: `Error parsing filename: ${error instanceof Error ? error.message : String(error)}`
     };
   }
 }
 
-export function determineLibrary(parsed: ParsedFilename): string {
-  // Convert academic year to library format (e.g., S1 -> M1)
-  const yearMap: Record<string, string> = {
-    S1: "M1",
-    S2: "M2",
-    S3: "M3",
-    M1: "M1",
-    M2: "M2",
-    M3: "M3",
-    J4: "J4",
-    J5: "J5",
-    J6: "J6",
-  };
-
-  const mappedYear = yearMap[parsed.academicYear] || parsed.academicYear;
-
-  // Format the expected library name
-  const expectedLibrary = `${mappedYear}-${parsed.branch}-${parsed.teacherCode}-${parsed.teacherName
-    .split(" ")
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1).toLowerCase())
-    .join(" ")}`;
-
-  // Check predefined libraries (restore original list or update with actual libraries)
-  const predefinedLibraries = {
-    "J6-SS-P0114-Ahmed Bakr": {
-      branch: "SS",
-      teacherCode: "P0114",
-      academicYear: "J6",
-    },
-    "M1-AR-P0046-Zakaria Seif Eldin": {
-      branch: "AR",
-      teacherCode: "P0046",
-      academicYear: "M1",
-    },
-    "M2-SCI-AR-P0078-Muslim Elsayed": {
-      branch: "SCI",
-      teacherCode: "P0078",
-      academicYear: "M2",
-    },
-    // Add other libraries from your Bunny.net dashboard or settings.py
-  };
-
-  // Check if the expected library exists in predefined libraries
-  for (const libName in predefinedLibraries) {
-    const lib = predefinedLibraries[libName];
-    if (
-      lib.branch === parsed.branch &&
-      lib.teacherCode === parsed.teacherCode &&
-      lib.academicYear === mappedYear
-    ) {
-      return libName;
-    }
-  }
-
-  // If no match, log a warning and try to find a partial match or throw an error
-  console.warn(
-    `Library not found for parsed data: ${JSON.stringify(parsed)}. Generated: ${expectedLibrary}`,
+export function findMatchingLibrary(libraryName: string, libraries: LibraryInfo[]): LibraryInfo | null {
+  const normalizedTarget = normalizeString(libraryName);
+  
+  // Try exact match first
+  let match = libraries.find(lib => 
+    normalizeString(lib.name) === normalizedTarget
   );
-  for (const libName in predefinedLibraries) {
-    if (
-      libName
-        .toLowerCase()
-        .startsWith(
-          expectedLibrary.toLowerCase().split("-").slice(0, 3).join("-"),
-        )
-    ) {
-      console.warn(`Partial match found: ${libName} for ${expectedLibrary}`);
-      return libName;
-    }
+
+  // If no exact match, try flexible matching with more lenient comparison
+  if (!match) {
+    match = libraries.find(lib => {
+      const normalizedLib = normalizeString(lib.name);
+      const targetParts = normalizedTarget.split('-').filter(Boolean);
+      const libParts = normalizedLib.split('-').filter(Boolean);
+      
+      // تحقق من تطابق الأجزاء الأساسية
+      const matchesYear = targetParts[0] === libParts[0]; // M2
+      const matchesBranch = libParts.includes(targetParts[1]); // SCI
+      const matchesTeacherCode = targetParts.includes(libParts.find(p => p.startsWith('p')) || '');
+      
+      // يجب أن تتطابق على الأقل السنة والمادة وكود المعلم
+      return matchesYear && matchesBranch && matchesTeacherCode;
+    });
   }
 
-  throw new Error(`Library not found: ${expectedLibrary}`);
+  return match || null;
 }
 
-export function determineCollection(
-  parsed: ParsedFilename,
-  year: "2024" | "2025",
-): string {
-  const termNum = parsed.term.replace("T", "");
+// تعريف الكولكشنز الثابتة
+export const VALID_COLLECTIONS = {
+  TERM1: {
+    NORMAL: "T1-2025",
+    QUESTIONS: "T1-2025-QV",
+    REVISION: "RE-T1-2025-QV"
+  },
+  TERM2: {
+    NORMAL: "T2-2025",
+    QUESTIONS: "T2-2025-QV",
+    REVISION: "RE-T2-2025-QV"
+  },
+  REVISION: "RE-2025"
+} as const;
 
+export function determineCollection(parsed: ParsedFilename, year: "2024" | "2025"): {
+  collection: string;
+  reason: string;
+} {
+  const termNum = parsed.term.replace("T", "");
+  const term = termNum === "1" ? "TERM1" : "TERM2";
+  
+  // حالة المراجعات
   if (parsed.type === "RE") {
-    return `RE-T${termNum}-${year}`;
-  } else if (parsed.type === "QV") {
-    return `T${termNum}-${year}-QV`;
-  } else {
-    return `T${termNum}-${year}`;
+    if (parsed.questionNumber) {
+      return {
+        collection: VALID_COLLECTIONS[term].REVISION,
+        reason: "مراجعة مع أسئلة"
+      };
+    }
+    return {
+      collection: VALID_COLLECTIONS.REVISION,
+      reason: "مراجعة عامة"
+    };
   }
+  
+  // حالة الأسئلة (إما بوجود Q في نهاية الاسم أو في النوع)
+  if (parsed.questionNumber || parsed.lessonName.includes("Q")) {
+    return {
+      collection: VALID_COLLECTIONS[term].QUESTIONS,
+      reason: `أسئلة - ترم ${termNum}`
+    };
+  }
+  
+  // الحالة العادية
+  return {
+    collection: VALID_COLLECTIONS[term].NORMAL,
+    reason: `محتوى عادي - ترم ${termNum}`
+  };
+}
+
+export function determineLibrary(parsed: ParsedFilename): string {
+  // تعديل طريقة معالجة اسم المكتبة
+  const branchParts = parsed.branch.split('-');
+  const mainBranch = branchParts[0]; // SCI
+  const lang = branchParts[1] || ''; // AR
+  
+  // Format: AcademicYear-Branch[-Lang]-TeacherCode-TeacherName
+  const libraryParts = [
+    parsed.academicYear, // M2
+    mainBranch, // SCI
+    lang, // AR
+    parsed.teacherCode, // P0078
+    parsed.teacherName // Muslim Elsayed
+  ].filter(Boolean); // يزيل القيم الفارغة
+
+  return libraryParts.map(p => normalizeString(p)).join('-');
 }

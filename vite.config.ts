@@ -37,23 +37,20 @@ export default defineConfig({
     headers: {
       "Access-Control-Allow-Origin": "*", // Allow all origins (adjust as needed)
     },
-    hmr: {
-      protocol: "wss",
-      host: "flamboyant-lehmann2-gaxyp.dev-2.tempolabs.ai",
-      clientPort: 443,
-      timeout: 30000,
-      overlay: false,
-    },
     proxy: {
       "/api": {
-        target: "http://localhost:5000", // Your backend API server
-        ws: true, // Enable WebSocket support
+        target: "http://localhost:3001", // Your backend API server
         changeOrigin: true,
+        secure: false,
       },
     },
     watch: {
       usePolling: true, // Enable polling as a fallback
     },
-    https: false, // Disable HTTPS during development (optional)
+    port: 5173,
+  },
+  build: {
+    outDir: 'dist',
+    assetsDir: 'assets'
   },
 });

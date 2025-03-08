@@ -1,5 +1,6 @@
 import { cache } from "./cache";
 import { dataStorage } from "./data-storage";
+import { LibraryData } from "@/types/library-data";
 
 type ProcessingStatus = "pending" | "processing" | "completed" | "error";
 
@@ -140,17 +141,33 @@ class BunnyService {
 
   async initialize(): Promise<void> {
     try {
-      const libraries = await this.getLibraries();
-      this.storage.setLibraries(libraries);
-      libraries.forEach((lib) => {
-        if (lib.apiKey) {
-          cache.set(`library_${lib.id}_api`, lib.apiKey);
-        }
-      });
-      this.initialized = true;
+      const savedData = dataStorage.getLibraryData();
+      if (savedData) {
+        // Use saved encrypted data
+        this.setLibraryApiKey('default', savedData.mainApiKey);
+        savedData.libraries.forEach(lib => {
+          if (lib.apiKey) {
+            cache.set(`library_${lib.id}_api`, lib.apiKey);
+          }
+        });
+        return;
+      }
+
+      // Fallback to API if no saved data
+      await this.initializeFromAPI();
     } catch (error) {
-      this.initializationError =
-        error instanceof Error ? error.message : "Unknown error";
+      console.error('Error initializing:', error);
+      throw error;
+    }
+  }
+
+  async initializeFromAPI() {
+    // Add implementation
+    try {
+      // Add your initialization logic here
+      return true;
+    } catch (error) {
+      console.error('Failed to initialize from API:', error);
       throw error;
     }
   }
@@ -295,6 +312,27 @@ class BunnyService {
     `.trim();
   }
 
+  // Add method to create collection
+  async createCollection(
+    libraryId: string,
+    collectionName: string,
+    accessToken?: string
+  ) {
+    const response = await this.fetchWithError(
+      `${this.videoBaseUrl}/library/${libraryId}/collections`,
+      {
+        method: "POST",
+        body: JSON.stringify({
+          name: collectionName
+        }),
+      },
+      libraryId,
+      accessToken
+    );
+
+    return response;
+  }
+
   async uploadVideo(
     file: File,
     libraryId: string,
@@ -305,31 +343,57 @@ class BunnyService {
     try {
       if (!libraryId) throw new Error("Library ID is required for upload");
 
+      // Create video entry with collection ID
       const createResponse = await this.fetchWithError(
         `${this.videoBaseUrl}/library/${libraryId}/videos`,
         {
           method: "POST",
           body: JSON.stringify({
             title: file.name,
-            collectionId: collectionId,
+            collectionId: collectionId // Add collection ID here
           }),
         },
         libraryId,
-        accessToken,
+        accessToken
       );
 
-      if (!createResponse?.guid)
+      if (!createResponse?.guid) {
         throw new Error("Failed to create video entry");
+      }
 
-      await this.fetchWithError(
-        `${this.videoBaseUrl}/library/${libraryId}/videos/${createResponse.guid}`,
-        {
-          method: "PUT",
-          body: file,
-        },
-        libraryId,
-        accessToken,
-      );
+      // Upload the actual file with progress tracking
+      const xhr = new XMLHttpRequest();
+      
+      await new Promise<void>((resolve, reject) => {
+        xhr.upload.onprogress = (event) => {
+          if (event.lengthComputable && onProgress) {
+            const progress = Math.round((event.loaded / event.total) * 100);
+            onProgress(progress);
+          }
+        };
+
+        xhr.onload = () => {
+          if (xhr.status >= 200 && xhr.status < 300) {
+            resolve();
+          } else {
+            reject(new Error(`Upload failed with status ${xhr.status}`));
+          }
+        };
+
+        xhr.onerror = () => reject(new Error("Upload failed"));
+
+        xhr.open(
+          "PUT",
+          `${this.videoBaseUrl}/library/${libraryId}/videos/${createResponse.guid}`,
+          true
+        );
+        
+        if (accessToken) {
+          xhr.setRequestHeader("AccessKey", accessToken);
+        }
+
+        xhr.send(file);
+      });
 
       return createResponse;
     } catch (error) {
@@ -387,6 +451,45 @@ class BunnyService {
         });
     } catch (error) {
       console.error("Error getting embed codes:", error);
+      throw error;
+    }
+  }
+
+  async fetchAllLibraryData(mainApiKey: string): Promise<LibraryData> {
+    try {
+      // Set the main API key for initial requests
+      this.apiKey = mainApiKey;
+      
+      // Fetch all libraries
+      const libraries = await this.getLibraries();
+      
+      // Fetch collections for each library
+      const libraryInfos = await Promise.all(
+        libraries.map(async (lib) => {
+          const collections = await this.getCollections(lib.id);
+          return {
+            id: lib.id,
+            name: lib.name,
+            apiKey: lib.apiKey,
+            collections: collections.map(col => ({
+              id: col.id,
+              name: col.name
+            }))
+          };
+        })
+      );
+
+      const data: LibraryData = {
+        lastUpdated: new Date().toISOString(),
+        libraries: libraryInfos,
+        mainApiKey
+      };
+
+      // Save to storage
+      await dataStorage.saveLibraryData(data);
+      return data;
+    } catch (error) {
+      console.error('Error fetching library data:', error);
       throw error;
     }
   }

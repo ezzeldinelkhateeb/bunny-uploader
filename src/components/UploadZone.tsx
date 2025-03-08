@@ -1,106 +1,74 @@
-import React from "react";
-import { Button } from "./ui/button";
-import { Upload, FileUp } from "lucide-react";
+import React from 'react';
+import { Upload, Loader2 } from 'lucide-react';
+import { Button } from './ui/button';
 
 interface UploadZoneProps {
-  onFilesSelected?: (files: FileList) => void;
-  isUploading?: boolean;
-  acceptedFileTypes?: string[];
-  maxFileSize?: number;
+  onFileSelect: (files: FileList) => void;
+  disabled: boolean;
+  files: File[];
+  onStartUpload: () => Promise<void>;
+  isUploading: boolean;
 }
 
-const UploadZone = ({
-  onFilesSelected = () => {},
-  isUploading = false,
-  acceptedFileTypes = [".mp4", ".mov", ".avi"],
-  maxFileSize = 1024 * 1024 * 1000, // 1GB
-}: UploadZoneProps) => {
-  const [isDragging, setIsDragging] = React.useState(false);
-  const fileInputRef = React.useRef<HTMLInputElement>(null);
-
-  const handleDragEnter = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragging(true);
-  };
-
-  const handleDragLeave = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragging(false);
-  };
-
-  const handleDragOver = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-  };
-
-  const handleDrop = (e: React.DragEvent) => {
-    e.preventDefault();
-    e.stopPropagation();
-    setIsDragging(false);
-
-    const { files } = e.dataTransfer;
-    if (files && files.length > 0) {
-      onFilesSelected(files);
-    }
-  };
-
-  const handleFileInput = (e: React.ChangeEvent<HTMLInputElement>) => {
-    const { files } = e.target;
-    if (files && files.length > 0) {
-      onFilesSelected(files);
-    }
-  };
-
-  const handleButtonClick = () => {
-    fileInputRef.current?.click();
-  };
+const UploadZone: React.FC<UploadZoneProps> = ({
+  onFileSelect,
+  disabled,
+  files,
+  onStartUpload,
+  isUploading
+}) => {
+  const inputRef = React.useRef<HTMLInputElement>(null);
 
   return (
-    <div className="w-full bg-white p-8 rounded-lg border-2 border-dashed border-gray-300 hover:border-gray-400 transition-colors">
+    <div className="space-y-4">
       <div
-        className={`flex flex-col items-center justify-center h-64 ${
-          isDragging ? "bg-gray-50" : ""
+        className={`border-2 border-dashed rounded-lg p-8 text-center ${
+          disabled ? 'opacity-50 cursor-not-allowed' : 'cursor-pointer hover:border-primary'
         }`}
-        onDragEnter={handleDragEnter}
-        onDragLeave={handleDragLeave}
-        onDragOver={handleDragOver}
-        onDrop={handleDrop}
+        onClick={() => !disabled && inputRef.current?.click()}
+        onDragOver={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+        }}
+        onDrop={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          if (!disabled && e.dataTransfer.files) {
+            onFileSelect(e.dataTransfer.files);
+          }
+        }}
       >
-        {isUploading ? (
-          <Upload className="h-12 w-12 text-gray-400 animate-bounce" />
-        ) : (
-          <FileUp className="h-12 w-12 text-gray-400" />
-        )}
-        <h3 className="mt-4 text-lg font-medium text-gray-700">
-          {isDragging
-            ? "Drop your files here"
-            : "Drag and drop your video files here"}
-        </h3>
-        <p className="mt-2 text-sm text-gray-500">
-          or click the button below to browse
-        </p>
         <input
           type="file"
-          ref={fileInputRef}
-          className="hidden"
           multiple
-          accept={acceptedFileTypes.join(",")}
-          onChange={handleFileInput}
+          className="hidden"
+          ref={inputRef}
+          onChange={(e) => e.target.files && onFileSelect(e.target.files)}
+          disabled={disabled}
         />
-        <Button
-          onClick={handleButtonClick}
-          className="mt-4"
-          disabled={isUploading}
-        >
-          Select Files
-        </Button>
-        <p className="mt-4 text-xs text-gray-400">
-          Supported formats: {acceptedFileTypes.join(", ")} (max{" "}
-          {maxFileSize / (1024 * 1024)}MB)
-        </p>
+        <Upload className="mx-auto h-12 w-12 text-gray-400" />
+        <p className="mt-2">Drag and drop files here or click to select</p>
       </div>
+
+      {files.length > 0 && (
+        <Button 
+          onClick={onStartUpload}
+          disabled={isUploading}
+          className="w-full"
+        >
+          {isUploading ? (
+            <>
+              <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+              Uploading...
+            </>
+          ) : (
+            <>
+              <Upload className="mr-2 h-4 w-4" />
+              Upload {files.length} Files
+            </>
+          )}
+        </Button>
+      )}
     </div>
   );
 };

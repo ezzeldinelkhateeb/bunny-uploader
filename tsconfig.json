@@ -17,7 +17,12 @@
     "strict": false,
     "paths": {
       "@/*": ["./src/*"]
-    }
+    },
+    "types": [
+      "@types/gapi",
+      "@types/gapi.client",
+      "@types/gapi.client.sheets"
+    ]
   },
   "include": ["src"],
   "exclude": ["src/tempobook"],

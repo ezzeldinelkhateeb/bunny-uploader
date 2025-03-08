@@ -1,140 +1,90 @@
-import React from "react";
+import React, { useState, useEffect } from "react";
 import { ScrollArea } from "./ui/scroll-area";
 import { Card } from "./ui/card";
-import FileProgressRow from "./FileProgressRow";
+import { CheckCircle2, AlertCircle, Clock, Loader2 } from "lucide-react";
+import { motion, AnimatePresence } from "framer-motion";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "./ui/select";
+import { Progress } from "./ui/progress";
 
-type ProcessingStatus = "pending" | "processing" | "completed" | "error";
-
-interface QueueItem {
+interface Library {
   id: string;
-  filename: string;
-  status: ProcessingStatus;
-  progress: number;
-  errorMessage?: string;
-  metadata: {
-    library: string;
-    collection: string;
-    year: string;
-  };
+  name: string;
+}
+
+interface UploadGroup {
+  library: string;
+  collection: string;
+  items: {
+    id: string;
+    file: File;
+    filename: string;
+    status: "pending" | "processing" | "completed" | "error";
+    progress: number;
+    errorMessage?: string;
+    metadata: {
+      library: string;
+      collection: string;
+      year: string;
+      libraryName: string;
+      collectionName: string;
+      needsManualSelection?: boolean;
+      reason?: string; // Add this optional field
+    };
+  }[];
 }
 
 interface ProcessingQueueProps {
-  items?: QueueItem[];
+  groups: UploadGroup[];
+  libraries: Library[];
+  onUpdateMetadata: (fileId: string, library: string, collection: string) => void;
 }
 
-const ProcessingQueue = ({ items = defaultItems }: ProcessingQueueProps) => {
-  // Group items by library and collection
-  const groups = React.useMemo(() => {
-    const groupMap = new Map<
-      string,
-      {
-        library: string;
-        collection: string;
-        items: typeof items;
-      }
-    >();
-
-    items.forEach((item) => {
-      const key = `${item.metadata.library}|${item.metadata.collection}`;
-      if (!groupMap.has(key)) {
-        groupMap.set(key, {
-          library: item.metadata.library,
-          collection: item.metadata.collection,
-          items: [],
-        });
-      }
-      groupMap.get(key)?.items.push(item);
-    });
-
-    return Array.from(groupMap.values());
-  }, [items]);
+const ProcessingQueue: React.FC<ProcessingQueueProps> = ({
+  groups,
+  libraries,
+  onUpdateMetadata
+}) => {
   return (
-    <Card className="w-full bg-gray-50 p-6">
-      <div className="mb-4">
-        <h2 className="text-2xl font-semibold">Processing Queue</h2>
-        <p className="text-gray-500">Track the status of your video uploads</p>
-      </div>
-
-      <ScrollArea className="h-[400px] w-full rounded-md border">
-        <div className="space-y-6 p-4">
+    <div className="space-y-4">
+      <h3 className="text-lg font-semibold">Upload Status</h3>
+      <ScrollArea className="h-[300px] rounded-md border">
+        <div className="p-4 space-y-4">
           {groups.map((group) => (
-            <div
-              key={`${group.library}|${group.collection}`}
-              className="space-y-2"
-            >
-              <div className="sticky top-0 bg-white/90 backdrop-blur-sm p-2 border-b">
-                <h3 className="font-semibold">{group.library}</h3>
-                <p className="text-sm text-muted-foreground">
-                  {group.collection}
-                </p>
+            <div key={`${group.library}-${group.collection}`} className="border rounded-lg p-4">
+              <div className="flex justify-between items-start mb-4">
+                <div>
+                  <h3 className="font-semibold">
+                    {group.items[0]?.metadata?.libraryName || group.library} → {group.items[0]?.metadata?.collectionName || group.collection}
+                  </h3>
+                </div>
               </div>
-              <div className="space-y-2 pl-2">
+              
+              <div className="space-y-3">
                 {group.items.map((item) => (
-                  <FileProgressRow
-                    key={item.id}
-                    filename={item.filename}
-                    status={item.status}
-                    progress={item.progress}
-                    errorMessage={item.errorMessage}
-                    metadata={item.metadata}
-                  />
+                  <div key={item.id} className="space-y-2">
+                    <div className="flex justify-between items-center">
+                      <span className="text-sm truncate">{item.filename}</span>
+                      <span className="text-sm text-gray-500">{item.progress}%</span>
+                    </div>
+                    <Progress value={item.progress} className="h-2" />
+                    {item.errorMessage && (
+                      <p className="text-xs text-red-500">{item.errorMessage}</p>
+                    )}
+                  </div>
                 ))}
               </div>
             </div>
           ))}
         </div>
       </ScrollArea>
-    </Card>
+    </div>
   );
 };
-
-// Default items for demonstration
-const defaultItems: QueueItem[] = [
-  {
-    id: "1",
-    filename: "physics-lecture-2024.mp4",
-    status: "completed",
-    progress: 100,
-    metadata: {
-      library: "Science Library",
-      collection: "Physics",
-      year: "2024",
-    },
-  },
-  {
-    id: "2",
-    filename: "chemistry-lab-2024.mp4",
-    status: "processing",
-    progress: 45,
-    metadata: {
-      library: "Science Library",
-      collection: "Chemistry",
-      year: "2024",
-    },
-  },
-  {
-    id: "3",
-    filename: "biology-class-2024.mp4",
-    status: "error",
-    progress: 30,
-    errorMessage: "Upload failed. Please try again.",
-    metadata: {
-      library: "Science Library",
-      collection: "Biology",
-      year: "2024",
-    },
-  },
-  {
-    id: "4",
-    filename: "math-tutorial-2024.mp4",
-    status: "pending",
-    progress: 0,
-    metadata: {
-      library: "Main Library",
-      collection: "Mathematics",
-      year: "2024",
-    },
-  },
-];
 
 export default ProcessingQueue;
