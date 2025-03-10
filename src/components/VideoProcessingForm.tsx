@@ -4,7 +4,7 @@ import { RadioGroup, RadioGroupItem } from "./ui/radio-group";
 import { Label } from "./ui/label";
 import { Input } from "./ui/input";
 import { ScrollArea } from "./ui/scroll-area";
-import { Search, Copy, Save, Loader2, CheckCircle2 } from "lucide-react";
+import { Search, Copy, Save, Loader2, CheckCircle2, Download } from "lucide-react";
 import { Button } from "./ui/button";
 import { useToast } from "./ui/use-toast";
 import { bunnyService } from "../lib/bunny-service";
@@ -86,11 +86,44 @@ const VideoProcessingForm = ({
   const uploadManagerRef = useRef<UploadManager | null>(null);
   const [selectedFiles, setSelectedFiles] = useState<File[]>([]);
   const [isUpdatingSheet, setIsUpdatingSheet] = useState(false);
+  const [lastCheckedIndex, setLastCheckedIndex] = useState<number | null>(null);
+  const [isGloballyPaused, setIsGloballyPaused] = useState(false);
+  const [isExporting, setIsExporting] = useState(false);
+
+  const updateSheetForVideo = async (videoTitle: string, videoGuid: string, libraryId: string) => {
+    try {
+      const embedCode = await bunnyService.getVideoEmbedCode(libraryId, videoGuid);
+      const videoData = [{
+        name: videoTitle,
+        embed_code: embedCode
+      }];
+
+      await googleSheetsService.updateEmbedsInSheet(videoData);
+      
+      toast({
+        title: "✅ Sheet Updated",
+        description: `Successfully updated video link for ${videoTitle}`,
+        duration: 3000
+      });
+    } catch (error) {
+      console.error('Error updating sheet for video:', videoTitle, error);
+      toast({
+        title: "⚠️ Warning",
+        description: `Failed to update sheet for video ${videoTitle}`,
+        variant: "warning",
+        duration: 3000
+      });
+    }
+  };
 
   useEffect(() => {
     uploadManagerRef.current = new UploadManager(
       (groups) => setUploadGroups(groups),
-      toast
+      (videoTitle: string, videoGuid: string, libraryId: string) => {
+        setTimeout(() => {
+          updateSheetForVideo(videoTitle, videoGuid, libraryId);
+        }, 0);
+      }
     );
   }, []);
 
@@ -163,8 +196,8 @@ const VideoProcessingForm = ({
   const getEmbedCode = async (videoGuid: string, videoTitle: string) => {
     if (!selectedLibrary) {
       toast({
-        title: "خطأ",
-        description: "برجاء اختيار المكتبة أولاً",
+        title: "Error",
+        description: "Please select a library first",
         variant: "destructive",
       });
       return;
@@ -177,7 +210,7 @@ const VideoProcessingForm = ({
       );
   
       if (!embedCode) {
-        throw new Error("لم يتم العثور على embed code");
+        throw new Error("Embed code not found");
       }
   
       await copyToClipboard(embedCode);
@@ -188,15 +221,15 @@ const VideoProcessingForm = ({
       }, 2000);
   
       toast({
-        title: "✨ تم النسخ!",
-        description: `تم نسخ كود الفيديو ${videoTitle}`,
+        title: "✨ Copied!",
+        description: `Video code copied for ${videoTitle}`,
         className: "bg-green-50 border-green-200",
       });
     } catch (error) {
       console.error('Error getting embed code:', error);
       toast({
-        title: "خطأ",
-        description: "فشل في الحصول على كود الفيديو",
+        title: "Error",
+        description: "Failed to get video embed code",
         variant: "destructive",
       });
     }
@@ -204,8 +237,21 @@ const VideoProcessingForm = ({
 
   // Add file upload handler
   const handleFileSelect = (files: FileList) => {
+    if (uploadManagerRef.current?.hasActiveUploads()) {
+      toast({
+        title: "⚠️ Active Uploads",
+        description: "Please wait for current uploads to complete or cancel them before adding new files",
+        variant: "warning",
+        duration: 5000
+      });
+      return;
+    }
+
+    // Clear previous uploads if they're done
+    uploadManagerRef.current?.clearQueue();
+    
     const fileArray = Array.from(files);
-    setSelectedFiles(prev => [...prev, ...fileArray]);
+    setSelectedFiles(fileArray);
     
     if (uploadManagerRef.current) {
       uploadManagerRef.current.previewFiles(fileArray, selectedYear);
@@ -345,15 +391,15 @@ const VideoProcessingForm = ({
       }, 2000);
   
       toast({
-        title: "🎉 تم النسخ!",
-        description: `تم نسخ ${selectedVideos.size} كود للفيديوهات المحددة`,
+        title: "🎉 Copied!",
+        description: `Copied ${selectedVideos.size} video codes`,
         className: "bg-green-50 border-green-200",
       });
     } catch (error) {
       console.error('Error copying selected videos:', error);
       toast({
-        title: "خطأ",
-        description: "فشل في نسخ الفيديوهات المحددة",
+        title: "Error",
+        description: "Failed to copy selected videos",
         variant: "destructive",
       });
     }
@@ -362,8 +408,8 @@ const VideoProcessingForm = ({
   const startUpload = async () => {
     if (!selectedFiles.length) {
       toast({
-        title: "خطأ",
-        description: "برجاء اختيار ملفات للرفع أولاً",
+        title: "Error",
+        description: "Please select files to upload first",
         variant: "destructive",
       });
       return;
@@ -374,8 +420,8 @@ const VideoProcessingForm = ({
       await uploadManagerRef.current?.startUpload(selectedFiles, selectedYear);
     } catch (error) {
       toast({
-        title: "خطأ",
-        description: "حدث خطأ أثناء الرفع",
+        title: "Error",
+        description: "Upload failed",
         variant: "destructive",
       });
     } finally {
@@ -385,122 +431,164 @@ const VideoProcessingForm = ({
 
   const handleUpdateMetadata = useCallback((fileId: string, library: string, collection: string) => {
     uploadManagerRef.current?.updateFileMetadata(fileId, library, collection);
-  }, []);
+  }, []); // Fix empty dependency array
 
   const handleUpdateSheet = async () => {
     if (selectedVideos.size === 0) {
       toast({
-        title: "⚠️ تنبيه",
-        description: "برجاء اختيار الفيديوهات أولاً",
+        title: "⚠️ Warning",
+        description: "Please select videos first",
         variant: "warning",
-        duration: 3000
       });
       return;
     }
   
     setIsUpdatingSheet(true);
     
-    // Show initial progress toast
-    toast({
-      title: "🔄 جاري التحديث",
-      description: `جاري تحديث ${selectedVideos.size} فيديو...`,
-      duration: 3000
-    });
-  
     try {
       const selectedVideosList = videos.filter(v => selectedVideos.has(v.guid));
-      const totalVideos = selectedVideosList.length;
-      let processedCount = 0;
-  
-      // Process videos in chunks to avoid overwhelming the API
-      const chunkSize = 10;
-      for (let i = 0; i < selectedVideosList.length; i += chunkSize) {
-        const chunk = selectedVideosList.slice(i, i + chunkSize);
-        
-        const embedPromises = chunk.map(async (video) => {
+      const videosData = await Promise.all(
+        selectedVideosList.map(async (video) => {
           const embedCode = await bunnyService.getVideoEmbedCode(
             selectedLibrary,
-            video.guid,
+            video.guid
           );
-          processedCount++;
-          
-          // Show progress update every 10 videos
-          if (processedCount % 10 === 0) {
-            toast({
-              title: "🔄 جاري التحديث",
-              description: `تم معالجة ${processedCount} من ${totalVideos} فيديو`,
-              duration: 2000
-            });
-          }
-          
           return {
             name: video.title,
             embed_code: embedCode,
           };
-        });
+        })
+      );
   
-        const embedResults = await Promise.all(embedPromises);
-        const result = await googleSheetsService.updateEmbedsInSheet(embedResults);
+      const result = await googleSheetsService.updateEmbedsInSheet(videosData);
   
-        // Show batch success notification
-        if (result.stats?.updated > 0) {
-          toast({
-            title: "✅ تم التحديث",
-            description: result.message,
-            variant: "success",
-            duration: 3000
-          });
-        }
-  
-        // Show warnings if any
-        if (result.not_found_videos?.length > 0) {
-          toast({
-            title: "⚠️ فيديوهات غير موجودة",
-            description: result.not_found_videos.join('\n'),
-            variant: "warning",
-            duration: 5000
-          });
-        }
-      }
-  
-      // Show final success message
+      // Update toast to always show the result
       toast({
-        title: "✅ تم الانتهاء!",
-        description: "تم تحديث جميع الفيديوهات المحددة",
-        variant: "success",
-        duration: 5000
+        title: "Sheet Update Results",
+        description: result.message,
+        variant: result.stats?.updated ? "success" : "warning",
+        duration: 10000
       });
   
     } catch (error) {
-      console.error('Error updating sheet:', error);
       toast({
-        title: "❌ خطأ",
-        description: error instanceof Error ? error.message : "فشل تحديث Google Sheets",
+        title: "❌ Update Failed",
+        description: error instanceof Error ? error.message : "Unknown error occurred",
         variant: "destructive",
-        duration: 5000
       });
     } finally {
       setIsUpdatingSheet(false);
     }
   };
 
+  const showConfetti = () => {
+    // Add confetti animation logic here
+    // You can use libraries like canvas-confetti
+  };
+
+  const handleCheckboxChange = (videoGuid: string, index: number, event: React.ChangeEvent<HTMLInputElement>) => {
+    // Access shiftKey from native event
+    const isShiftPressed = event.nativeEvent instanceof MouseEvent ? event.nativeEvent.shiftKey : false;
+  
+    setSelectedVideos((prev) => {
+      const newSet = new Set(prev);
+      
+      if (isShiftPressed && lastCheckedIndex !== null) {
+        // Get the range of videos between last checked and current
+        const start = Math.min(lastCheckedIndex, index);
+        const end = Math.max(lastCheckedIndex, index);
+        
+        // Get the selection state from the target checkbox
+        const shouldSelect = event.target.checked;
+        
+        // Apply the same selection state to all videos in range
+        sortedVideos.slice(start, end + 1).forEach((video) => {
+          if (shouldSelect) {
+            newSet.add(video.guid);
+          } else {
+            newSet.delete(video.guid);
+          }
+        });
+      } else {
+        // Normal toggle behavior
+        if (event.target.checked) {
+          newSet.add(videoGuid);
+        } else {
+          newSet.delete(videoGuid);
+        }
+      }
+      
+      return newSet;
+    });
+    
+    setLastCheckedIndex(index);
+  };
+
+  const handleGlobalPauseToggle = useCallback(() => {
+    setIsGloballyPaused(!isGloballyPaused);
+    uploadManagerRef.current?.toggleGlobalPause();
+  }, [isGloballyPaused]);
+
+  const handleExportBandwidth = async () => {
+    setIsExporting(true);
+    try {
+      await bunnyService.getBandwidthStats();
+      
+      toast({
+        title: "✅ Export Complete",
+        description: "Bandwidth statistics have been downloaded",
+        variant: "success"
+      });
+    } catch (error) {
+      toast({
+        title: "❌ Export Failed",
+        description: error instanceof Error ? error.message : "Failed to export statistics",
+        variant: "destructive"
+      });
+    } finally {
+      setIsExporting(false);
+    }
+  };
+
   return (
     <Card className="w-full p-6 bg-white space-y-6">
+      {/* Add this button section at the top */}
+      <div className="flex justify-between items-center">
+        <div className="flex gap-2">
+          <Button
+            onClick={handleExportBandwidth}
+            disabled={isExporting}
+            className={cn(
+              "transition-all duration-300",
+              isExporting ? "bg-gray-400" : "bg-green-500 hover:bg-green-600"
+            )}
+          >
+            {isExporting ? (
+              <Loader2 className="w-4 h-4 mr-2 animate-spin" />
+            ) : (
+              <Download className="w-4 h-4 mr-2" />
+            )}
+            Export Bandwidth Usage
+          </Button>
+        </div>
+        
+        <Button
+          onClick={handleFetchAndSave}
+          className={cn(
+            "transition-all duration-300",
+            isLoading ? "bg-gray-400" : "bg-blue-500 hover:bg-blue-600"
+          )}
+          disabled={isLoading}
+        >
+          {isLoading ? <Loader2 className="animate-spin" /> : <Save />}
+          Update Library Data
+        </Button>
+      </div>
+
       {/* Automatic Upload Section */}
       <section className="space-y-4">
         <div className="flex justify-between items-center">
           <h3 className="text-lg font-semibold">Automatic File Upload</h3>
-          <Button
-            onClick={handleFetchAndSave}
-            className={cn(
-              "transition-all duration-300",
-              isLoading ? "bg-gray-400" : "bg-blue-500 hover:bg-blue-600"
-            )}
-            disabled={isLoading}
-          >
-            {isLoading ? <Loader2 className="animate-spin" /> : <Save />}
-            Update Library Data
-          </Button>
         </div>
 
         <UploadZone
@@ -556,10 +644,15 @@ const VideoProcessingForm = ({
           groups={uploadGroups}
           libraries={libraries}
           onUpdateMetadata={handleUpdateMetadata}
+          onPauseUpload={(fileId: string) => uploadManagerRef.current?.pauseUpload(fileId)}
+          onResumeUpload={(fileId: string) => uploadManagerRef.current?.resumeUpload(fileId)}
+          onCancelUpload={(fileId: string) => uploadManagerRef.current?.cancelUpload(fileId)}
+          onGlobalPauseToggle={handleGlobalPauseToggle}
+          isGloballyPaused={isGloballyPaused}
         />
       )}
 
-      {/* Video Management Section */}
+      {/* Fix Video Management Section */}
       <section className="space-y-4 pt-6 border-t">
         <div className="flex justify-between items-center">
           <h3 className="text-lg font-semibold">Video Management</h3>
@@ -600,10 +693,14 @@ const VideoProcessingForm = ({
             </Button>
           </div>
         </div>
-      
+        
+        <div className="text-sm text-gray-500 mt-2">
+          💡 Tip: Hold Shift while clicking checkboxes to select multiple videos at once
+        </div>
+        
         <ScrollArea className="h-[400px]">
           <div className="space-y-2">
-            {sortedVideos.map((video) => (
+            {sortedVideos.map((video, index) => (
               <div 
                 key={video.guid} 
                 className="flex items-center justify-between p-2 border rounded hover:bg-gray-50"
@@ -612,17 +709,7 @@ const VideoProcessingForm = ({
                   <input
                     type="checkbox"
                     checked={selectedVideos.has(video.guid)}
-                    onChange={() => {
-                      setSelectedVideos((prev) => {
-                        const newSet = new Set(prev);
-                        if (newSet.has(video.guid)) {
-                          newSet.delete(video.guid);
-                        } else {
-                          newSet.add(video.guid);
-                        }
-                        return newSet;
-                      });
-                    }}
+                    onChange={(e) => handleCheckboxChange(video.guid, index, e)}
                     className="h-4 w-4 flex-shrink-0"
                   />
                   <span className="break-all pr-4">{video.title}</span>

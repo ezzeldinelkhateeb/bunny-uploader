@@ -1,6 +1,15 @@
 import { cache } from "./cache";
 import { dataStorage } from "./data-storage";
 import { LibraryData } from "@/types/library-data";
+import { showToast } from "../hooks/use-toast";
+import { saveAs } from 'file-saver';
+import * as XLSX from 'xlsx';
+
+interface LibraryBandwidthData {
+  [key: string]: {
+    [date: string]: number;
+  };
+}
 
 type ProcessingStatus = "pending" | "processing" | "completed" | "error";
 
@@ -54,6 +63,65 @@ interface Video {
   // Add other fields as needed from Bunny.net response
 }
 
+interface BandwidthStat {
+  date: string;
+  bytesUsed: number;
+  totalCost: number;
+}
+
+interface BunnyStatistic {
+  Date: string;
+  TotalRequests: number;
+  TotalBytes: number;
+  CacheHits: number;
+  Status2xx: number;
+  Status3xx: number;
+  Status4xx: number;
+  Status5xx: number;
+}
+
+interface BunnyStatisticsResponse {
+  Statistics: BunnyStatistic[];
+  From: string;
+  To: string;
+}
+
+interface BunnyStatsResponse {
+  BandwidthUsedChart: { [key: string]: number };
+  TotalBandwidthUsed: number;
+  UserBalanceHistoryChart: { [key: string]: number };
+}
+
+interface LibraryBandwidth {
+  libraryName: string;
+  bandwidth: {
+    date: string;
+    gigabytes: number;
+    cost: number;
+  }[];
+}
+
+interface StatisticsResponse {
+  Statistics: Array<{
+    Date: string;
+    TotalBytes: number;
+    TotalRequests: number;
+    CacheHits: number;
+    Status2xx: number;
+    Status3xx: number;
+    Status4xx: number;
+    Status5xx: number;
+  }>;
+  From: string;
+  To: string;
+}
+
+interface StatisticsChunk {
+  startDate: Date;
+  endDate: Date;
+  data: StatisticsResponse;
+}
+
 class BunnyService {
   private baseUrl = "https://api.bunny.net";
   private videoBaseUrl = "https://video.bunnycdn.com";
@@ -65,17 +133,19 @@ class BunnyService {
   private storage = dataStorage;
 
   constructor() {
+    // Get API key from environment
     this.publicApiKey = import.meta.env.VITE_BUNNY_API_KEY || "";
     this.apiKey = this.publicApiKey;
-
-    if (!this.publicApiKey) {
-      console.warn("No Bunny API key found in configuration");
+    
+    // Store API key in cache
+    if (this.publicApiKey) {
+      cache.set('default_api_key', this.publicApiKey);
     }
-
+    
     // Initialize with stored API key if available
     const storedApiKey = localStorage.getItem("bunny_api_key");
     if (storedApiKey) {
-      this.apiKey = storedApiKey;
+      this.currentLibraryKey = storedApiKey;
     }
   }
 
@@ -88,13 +158,24 @@ class BunnyService {
   }
 
   private getApiKey(libraryId?: string, accessToken?: string): string {
-    // Prioritize accessToken (explicitly passed) over cached library key or public key
-    if (accessToken) return accessToken;
-    if (libraryId) {
-      const libraryKey = cache.get(`library_${libraryId}_api`);
-      return libraryKey || this.publicApiKey;
+    // 1. Use provided access token if available
+    if (accessToken) {
+      return accessToken;
     }
-    return this.publicApiKey;
+
+    // 2. For main API endpoints, use the main API key
+    if (!libraryId) {
+      return this.apiKey || this.publicApiKey;
+    }
+
+    // 3. For library-specific operations, try to get library key
+    const libraryKey = cache.get(`library_${libraryId}_api`);
+    if (libraryKey) {
+      return libraryKey;
+    }
+
+    // 4. Fallback to current library key or public key
+    return this.currentLibraryKey || this.apiKey || this.publicApiKey;
   }
 
   private async fetchWithError(
@@ -104,13 +185,19 @@ class BunnyService {
     accessToken?: string,
   ): Promise<any> {
     try {
+      const apiKey = this.getApiKey(libraryId, accessToken);
+      
+      if (!apiKey) {
+        throw new Error('No API key available');
+      }
+
       const headers = new Headers({
         Accept: "application/json",
         "Content-Type":
           options.method === "PUT"
             ? "application/octet-stream"
             : "application/json",
-        AccessKey: this.getApiKey(libraryId, accessToken), // Use accessToken if provided
+        AccessKey: apiKey,
       });
 
       const response = await fetch(url, {
@@ -185,42 +272,59 @@ class BunnyService {
 
   async getLibraries(): Promise<Library[]> {
     try {
-      const response = await this.fetchWithError(
-        `${this.baseUrl}/videolibrary?page=1&perPage=100`,
-        { method: "GET" },
-      );
+      let allLibraries: Library[] = [];
+      let currentPage = 1;
+      let hasMorePages = true;
 
-      return (response.Items || []).map(
-        (lib: any): Library => ({
-          id: lib.Id?.toString() || "",
-          name: lib.Name || "Unnamed Library",
-          videoCount: lib.VideoCount || 0,
-          storageUsage: lib.StorageUsage || 0,
-          trafficUsage: lib.TrafficUsage || 0,
-          dateCreated: lib.DateCreated || "",
-          apiKey: lib.ApiKey || "",
-          regions: lib.ReplicationRegions || [],
-          resolutions: (lib.EnabledResolutions || "")
-            .split(",")
-            .filter(Boolean),
-          bitrates: {
-            "240p": lib.Bitrate240p || 0,
-            "360p": lib.Bitrate360p || 0,
-            "480p": lib.Bitrate480p || 0,
-            "720p": lib.Bitrate720p || 0,
-            "1080p": lib.Bitrate1080p || 0,
-            "1440p": lib.Bitrate1440p || 0,
-            "2160p": lib.Bitrate2160p || 0,
-          },
-          settings: {
-            allowDirectPlay: lib.AllowDirectPlay || false,
-            enableMP4Fallback: lib.EnableMP4Fallback || false,
-            keepOriginalFiles: lib.KeepOriginalFiles || false,
-            playerKeyColor: lib.PlayerKeyColor || "#ffffff",
-            fontFamily: lib.FontFamily || "",
-          },
-        }),
-      );
+      while (hasMorePages) {
+        const response = await this.fetchWithError(
+          `${this.baseUrl}/videolibrary?page=${currentPage}&perPage=100`,
+          { method: "GET" },
+        );
+
+        const libraries = (response.Items || []).map(
+          (lib: any): Library => ({
+            id: lib.Id?.toString() || "",
+            name: lib.Name || "Unnamed Library",
+            videoCount: lib.VideoCount || 0,
+            storageUsage: lib.StorageUsage || 0,
+            trafficUsage: lib.TrafficUsage || 0,
+            dateCreated: lib.DateCreated || "",
+            apiKey: lib.ApiKey || "",
+            regions: lib.ReplicationRegions || [],
+            resolutions: (lib.EnabledResolutions || "")
+              .split(",")
+              .filter(Boolean),
+            bitrates: {
+              "240p": lib.Bitrate240p || 0,
+              "360p": lib.Bitrate360p || 0,
+              "480p": lib.Bitrate480p || 0,
+              "720p": lib.Bitrate720p || 0,
+              "1080p": lib.Bitrate1080p || 0,
+              "1440p": lib.Bitrate1440p || 0,
+              "2160p": lib.Bitrate2160p || 0,
+            },
+            settings: {
+              allowDirectPlay: lib.AllowDirectPlay || false,
+              enableMP4Fallback: lib.EnableMP4Fallback || false,
+              keepOriginalFiles: lib.KeepOriginalFiles || false,
+              playerKeyColor: lib.PlayerKeyColor || "#ffffff",
+              fontFamily: lib.FontFamily || "",
+            },
+          }),
+        );
+
+        allLibraries = [...allLibraries, ...libraries];
+        
+        // Check if we have more pages
+        if (!response.Items || response.Items.length < 100) {
+          hasMorePages = false;
+        } else {
+          currentPage++;
+        }
+      }
+
+      return allLibraries;
     } catch (error) {
       console.error("Error fetching libraries:", error);
       throw error;
@@ -336,12 +440,17 @@ class BunnyService {
   async uploadVideo(
     file: File,
     libraryId: string,
-    onProgress?: (progress: number) => void,
+    onProgress?: (progress: number, bytesLoaded: number) => void,
     collectionId?: string,
     accessToken?: string, // Add accessToken parameter
+    signal?: AbortSignal, // Add abort signal support
+    customFilename?: string // Add parameter for custom filename
   ): Promise<{ guid: string; title: string }> {
     try {
       if (!libraryId) throw new Error("Library ID is required for upload");
+
+      // Use custom filename if provided, otherwise use original filename
+      const videoTitle = customFilename || file.name;
 
       // Create video entry with collection ID
       const createResponse = await this.fetchWithError(
@@ -349,7 +458,7 @@ class BunnyService {
         {
           method: "POST",
           body: JSON.stringify({
-            title: file.name,
+            title: videoTitle,
             collectionId: collectionId // Add collection ID here
           }),
         },
@@ -368,7 +477,7 @@ class BunnyService {
         xhr.upload.onprogress = (event) => {
           if (event.lengthComputable && onProgress) {
             const progress = Math.round((event.loaded / event.total) * 100);
-            onProgress(progress);
+            onProgress(progress, event.loaded);
           }
         };
 
@@ -400,6 +509,32 @@ class BunnyService {
       console.error("Error uploading video:", error);
       throw error;
     }
+  }
+
+  private createUploadStream(
+    file: File,
+    onProgress: (loaded: number, total: number) => void
+  ): ReadableStream {
+    const reader = file.stream().getReader();
+    let loaded = 0;
+
+    return new ReadableStream({
+      async pull(controller) {
+        const {done, value} = await reader.read();
+        
+        if (done) {
+          controller.close();
+          return;
+        }
+        
+        loaded += value.length;
+        onProgress(loaded, file.size);
+        controller.enqueue(value);
+      },
+      cancel() {
+        reader.cancel();
+      }
+    });
   }
 
   // Optional: Add method to fetch embed codes via backend, matching /get-bunny-embed-codes
@@ -457,13 +592,38 @@ class BunnyService {
 
   async fetchAllLibraryData(mainApiKey: string): Promise<LibraryData> {
     try {
-      // Set the main API key for initial requests
+      // Update instance API key
       this.apiKey = mainApiKey;
       
-      // Fetch all libraries
+      // Also update in cache
+      cache.set('default_api_key', mainApiKey);
+      
+      // Rest of the method remains the same
+      // ...existing code...
+      if (!mainApiKey) {
+        // Try to get from environment if not provided
+        mainApiKey = import.meta.env.VITE_BUNNY_API_KEY;
+        if (!mainApiKey) {
+          throw new Error("Main API key is required");
+        }
+      }
+
+      // Update instance and cache with new API key
+      this.publicApiKey = mainApiKey;
+      this.apiKey = mainApiKey;
+      cache.set('default_api_key', mainApiKey);
+
+      // 5. Fetch libraries with the main API key
       const libraries = await this.getLibraries();
       
-      // Fetch collections for each library
+      // 6. Cache each library's API key
+      libraries.forEach(lib => {
+        if (lib.apiKey) {
+          cache.set(`library_${lib.id}_api`, lib.apiKey);
+        }
+      });
+
+      // 7. Fetch collections using library-specific keys
       const libraryInfos = await Promise.all(
         libraries.map(async (lib) => {
           const collections = await this.getCollections(lib.id);
@@ -485,12 +645,171 @@ class BunnyService {
         mainApiKey
       };
 
-      // Save to storage
+      // 8. Save to persistent storage
       await dataStorage.saveLibraryData(data);
+
+      showToast({
+        title: "🔄 Library Update Complete",
+        description: `Updated ${libraryInfos.length} libraries\nTotal collections: ${
+          libraryInfos.reduce((acc, lib) => acc + lib.collections.length, 0)
+        }`,
+        variant: "success",
+        duration: 5000
+      });
+
       return data;
+
     } catch (error) {
-      console.error('Error fetching library data:', error);
+      showToast({
+        title: "❌ Library Update Failed", 
+        description: error instanceof Error ? error.message : "Unknown error occurred",
+        variant: "destructive",
+        duration: 5000
+      });
       throw error;
+    }
+  }
+
+  private async getStatisticsForDateRange(
+    libraryId: string,
+    startDate: Date,
+    endDate: Date
+  ): Promise<StatisticsResponse> {
+    return this.fetchWithError(
+      `${this.baseUrl}/statistics?` + new URLSearchParams({
+        dateFrom: startDate.toISOString(),
+        dateTo: endDate.toISOString(),
+        pullZone: libraryId,
+        serverZoneId: "-1",
+        loadErrors: "false",
+        hourly: "false"
+      }),
+      { method: "GET" }
+    );
+  }
+
+  async getBandwidthStats(): Promise<void> {
+    try {
+      // Calculate date ranges in 30-day chunks for last 6 months
+      const endDate = new Date();
+      const startDate = new Date();
+      startDate.setMonth(startDate.getMonth() - 6);
+      
+      const libraries = await this.getLibraries();
+      const libraryData: { [key: string]: StatisticsResponse[] } = {};
+
+      // For each library
+      for (const library of libraries) {
+        libraryData[library.name] = [];
+        let currentEnd = new Date(endDate);
+        let currentStart = new Date(currentEnd);
+        currentStart.setDate(currentStart.getDate() - 30); // 30-day chunks
+
+        // Get data in 30-day chunks
+        while (currentStart >= startDate) {
+          try {
+            const response = await this.getStatisticsForDateRange(
+              library.id,
+              currentStart,
+              currentEnd
+            );
+            
+            if (response?.Statistics) {
+              libraryData[library.name].push(response);
+            }
+
+            // Move to next chunk
+            currentEnd = new Date(currentStart);
+            currentStart.setDate(currentStart.getDate() - 30);
+          } catch (error) {
+            console.warn(`Failed to fetch chunk for ${library.name}:`, error);
+            break; // Move to next library if chunk fails
+          }
+        }
+      }
+
+      // Get unique months from all data
+      const months = new Set<string>();
+      Object.values(libraryData).forEach(chunks => {
+        chunks.forEach(chunk => {
+          chunk.Statistics.forEach(stat => {
+            const month = stat.Date.substring(0, 7);
+            months.add(month);
+          });
+        });
+      });
+
+      // Sort months in reverse chronological order
+      const sortedMonths = Array.from(months).sort().reverse();
+
+      // Create Excel data
+      const excelData = [['Library Name', ...sortedMonths]];
+
+      // Add library rows
+      Object.entries(libraryData).forEach(([libraryName, chunks]) => {
+        const row = [libraryName];
+        sortedMonths.forEach(month => {
+          // Sum bandwidth across all chunks for this month
+          const monthlyBandwidth = chunks
+            .flatMap(chunk => chunk.Statistics)
+            .filter(stat => stat.Date.startsWith(month))
+            .reduce((sum, stat) => sum + (stat.TotalBytes / (1024 * 1024 * 1024)), 0);
+          
+          row.push(monthlyBandwidth.toFixed(2));
+        });
+        excelData.push(row);
+      });
+
+      // Add total row
+      const totalRow = ['Total'];
+      sortedMonths.forEach((_, columnIndex) => {
+        const total = excelData
+          .slice(1)
+          .reduce((sum, row) => sum + Number(row[columnIndex + 1]), 0);
+        totalRow.push(total.toFixed(2));
+      });
+      excelData.push(totalRow);
+
+      // Create Excel workbook with same styling
+      const wb = XLSX.utils.book_new();
+      const ws = XLSX.utils.aoa_to_sheet(excelData);
+
+      // Add column widths
+      ws['!cols'] = [
+        { wch: 30 },
+        ...sortedMonths.map(() => ({ wch: 12 }))
+      ];
+
+      // Style header and total rows
+      const headerRange = XLSX.utils.decode_range(ws['!ref'] || 'A1');
+      for (let C = headerRange.s.c; C <= headerRange.e.c; ++C) {
+        // Bold header row
+        const headerAddress = XLSX.utils.encode_cell({ r: 0, c: C });
+        if (!ws[headerAddress]) ws[headerAddress] = {};
+        ws[headerAddress].s = { font: { bold: true } };
+
+        // Bold total row
+        const totalRowIndex = excelData.length - 1;
+        const totalAddress = XLSX.utils.encode_cell({ r: totalRowIndex, c: C });
+        if (!ws[totalAddress]) ws[totalAddress] = {};
+        ws[totalAddress].s = { font: { bold: true } };
+      }
+
+      XLSX.utils.book_append_sheet(wb, ws, "Bandwidth Usage");
+
+      // Save file
+      const excelBuffer = XLSX.write(wb, { bookType: 'xlsx', type: 'array' });
+      const fileName = `bandwidth_stats_${new Date().toISOString().split('T')[0]}.xlsx`;
+      const blob = new Blob([excelBuffer], { 
+        type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'
+      });
+      saveAs(blob, fileName);
+
+    } catch (error) {
+      console.error("Error downloading bandwidth stats:", error);
+      throw error instanceof Error 
+        ? error 
+        : new Error("Failed to download bandwidth statistics");
     }
   }
 }

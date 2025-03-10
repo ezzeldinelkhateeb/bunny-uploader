@@ -125,6 +125,77 @@ app.post('/api/sheets/update-bunny-embeds', async (req, res) => {
   }
 });
 
+// Add new endpoint for bandwidth stats
+app.post('/api/sheets/update-bandwidth-stats', async (req, res) => {
+  try {
+    const { data } = req.body;
+    
+    if (!Array.isArray(data)) {
+      return res.status(400).json({ 
+        success: false,
+        message: 'Invalid data format'
+      });
+    }
+
+    const credentials = JSON.parse(process.env.GOOGLE_SHEETS_CREDENTIALS_JSON);
+    const auth = new google.auth.GoogleAuth({
+      credentials,
+      scopes: ['https://www.googleapis.com/auth/spreadsheets']
+    });
+
+    const sheets = google.sheets({ version: 'v4', auth });
+    const spreadsheetId = process.env.GOOGLE_SHEETS_SPREADSHEET_ID;
+    
+    // First, ensure the sheet exists or create it
+    try {
+      await sheets.spreadsheets.batchUpdate({
+        spreadsheetId,
+        requestBody: {
+          requests: [{
+            addSheet: {
+              properties: {
+                title: 'BandwidthStats'
+              }
+            }
+          }]
+        }
+      });
+    } catch (error) {
+      // Sheet might already exist, ignore the error
+      console.log('Sheet might already exist:', error.message);
+    }
+
+    // Update the sheet with data
+    await sheets.spreadsheets.values.update({
+      spreadsheetId,
+      range: 'BandwidthStats!A1', // Use sheet name without spaces
+      valueInputOption: 'USER_ENTERED',
+      requestBody: {
+        values: [
+          ['Date', 'Bandwidth (GB)', 'Cost ($)'],
+          ...data.map(row => [
+            row.Date,
+            Number(row['Bandwidth (GB)']).toFixed(2),
+            Number(row['Cost ($)']).toFixed(2)
+          ])
+        ]
+      }
+    });
+
+    res.json({
+      success: true,
+      message: `Updated ${data.length} days of bandwidth statistics`
+    });
+
+  } catch (error) {
+    console.error('Error updating bandwidth stats:', error);
+    res.status(500).json({
+      success: false,
+      message: error instanceof Error ? error.message : 'Internal server error'
+    });
+  }
+});
+
 // Test endpoint for Google Sheets connection
 app.get('/api/test-sheets-connection', async (req, res) => {
   try {

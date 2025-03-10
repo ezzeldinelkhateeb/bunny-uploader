@@ -43,6 +43,9 @@ export const envConfig = {
     credentials: process.env.GOOGLE_SHEETS_CREDENTIALS_JSON
       ? JSON.parse(process.env.GOOGLE_SHEETS_CREDENTIALS_JSON)
       : null
+  },
+  bunny: {
+    apiKey: import.meta.env.VITE_BUNNY_API_KEY,
   }
 };
 
@@ -88,6 +91,11 @@ export function validateEnvConfig() {
 
   if (!credentials.client_email.includes('@') || !credentials.client_email.includes('.iam.gserviceaccount.com')) {
     console.warn('Warning: client_email format may be invalid');
+  }
+
+  if (!envConfig.bunny.apiKey) {
+    console.error('Missing required environment variable: VITE_BUNNY_API_KEY');
+    return false;
   }
 
   return true;

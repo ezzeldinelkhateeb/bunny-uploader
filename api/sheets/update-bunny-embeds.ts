@@ -8,52 +8,26 @@ interface VideoData {
 }
 
 interface UpdateResult {
-  updated: Array<{ name: string; row: number }>;
-  notFound: string[];
-  existingEmbeds: Array<{ name: string; row: number }>;
+  rowIndex?: number;
+  videoName: string;
+  status: 'updated' | 'notFound' | 'skipped';
 }
 
-async function findVideoRowAndCheckEmbed(
-  sheets: any,
-  spreadsheetId: string,
-  sheetName: string,
-  videoName: string
-): Promise<{ rowIndex: number | null; hasExistingEmbed: boolean }> {
-  try {
-    // Get all values from column N (video names)
-    const nameResponse = await sheets.values.get({
-      spreadsheetId,
-      range: `${sheetName}!N:N`,
-    });
+interface BatchUpdate {
+  range: string;
+  values: string[][];
+}
 
-    const rows = nameResponse.data.values || [];
-    let rowIndex: number | null = null;
-
-    // Find the exact match (case-sensitive)
-    for (let i = 1; i < rows.length; i++) {
-      if (rows[i]?.[0]?.trim() === videoName.trim()) {
-        rowIndex = i + 1; // Convert to 1-based index
-        break;
-      }
-    }
-
-    if (!rowIndex) {
-      return { rowIndex: null, hasExistingEmbed: false };
-    }
-
-    // Check if there's an existing embed code in column W
-    const embedResponse = await sheets.values.get({
-      spreadsheetId,
-      range: `${sheetName}!W${rowIndex}`,
-    });
-
-    const hasExistingEmbed = !!(embedResponse.data.values?.[0]?.[0]);
-
-    return { rowIndex, hasExistingEmbed };
-  } catch (error) {
-    console.error('Error checking row:', error);
-    throw error;
-  }
+interface UpdateResponse {
+  success: boolean;
+  message: string;
+  results: UpdateResult[];
+  notFoundVideos: string[];
+  stats: {
+    updated: number;
+    notFound: number;
+    skipped: number;
+  };
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse) {
@@ -73,10 +47,13 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
   try {
     const { videos } = req.body;
 
-    if (!Array.isArray(videos)) {
-      return res.status(400).json({ 
-        message: 'Invalid videos data',
-        received: req.body 
+    if (!Array.isArray(videos) || videos.length === 0) {
+      return res.status(400).json({
+        success: false,
+        message: 'No videos provided',
+        results: [],
+        notFoundVideos: [],
+        stats: { updated: 0, notFound: 0, skipped: 0 }
       });
     }
 
@@ -92,59 +69,106 @@ export default async function handler(req: VercelRequest, res: VercelResponse) {
     });
 
     const sheets = google.sheets({ version: 'v4', auth }).spreadsheets;
-    
-    const result: UpdateResult = {
-      updated: [],
-      notFound: [],
-      existingEmbeds: []
-    };
 
-    // Process each video
+    // Get current sheet data
+    const sheetsResponse = await sheets.values.get({
+      spreadsheetId,
+      range: `${sheetName}!N:W`,
+      valueRenderOption: 'UNFORMATTED_VALUE'
+    });
+
+    const rows = sheetsResponse.data.values || [];
+    const nameToRowMap = new Map<string, number>();
+    const existingEmbeds = new Map<number, string>();
+
+    // Create maps for faster lookup
+    rows.forEach((row, index) => {
+      if (row[0]) { // Name column (N)
+        const name = row[0].toString().split('.')[0].trim().toLowerCase();
+        nameToRowMap.set(name, index + 1);
+        if (row[9]) { // Embed column (W)
+          existingEmbeds.set(index + 1, row[9].toString());
+        }
+      }
+    });
+
+    const results: UpdateResult[] = [];
+    const updates: BatchUpdate[] = [];
+    const notFoundVideos: string[] = [];
+    const stats = { updated: 0, notFound: 0, skipped: 0 };
+
+    // Process videos
     for (const video of videos) {
-      console.log('Processing video:', video.name);
-      
-      const { rowIndex, hasExistingEmbed } = await findVideoRowAndCheckEmbed(
-        sheets.values,
-        spreadsheetId,
-        sheetName,
-        video.name
-      );
+      const cleanName = video.name.split('.')[0].trim().toLowerCase();
+      const rowIndex = nameToRowMap.get(cleanName);
 
       if (!rowIndex) {
-        result.notFound.push(video.name);
+        notFoundVideos.push(video.name);
+        stats.notFound++;
+        results.push({ videoName: video.name, status: 'notFound' });
         continue;
       }
 
-      if (hasExistingEmbed) {
-        result.existingEmbeds.push({ name: video.name, row: rowIndex });
+      const existingEmbed = existingEmbeds.get(rowIndex);
+      if (existingEmbed && existingEmbed.trim()) {
+        stats.skipped++;
+        results.push({ rowIndex, videoName: video.name, status: 'skipped' });
         continue;
       }
 
-      // Update embed code in column W
-      await sheets.values.update({
-        spreadsheetId,
+      updates.push({
         range: `${sheetName}!W${rowIndex}`,
-        valueInputOption: 'RAW',
-        requestBody: {
-          values: [[video.embed_code]]
-        }
+        values: [[video.embed_code]]
       });
-
-      result.updated.push({ name: video.name, row: rowIndex });
+      stats.updated++;
+      results.push({ rowIndex, videoName: video.name, status: 'updated' });
     }
 
-    return res.status(200).json({
-      success: true,
-      message: `تم تحديث ${result.updated.length} فيديو بنجاح`,
-      result
-    });
+    // Perform batch update if there are updates
+    if (updates.length > 0) {
+      try {
+        await sheets.values.batchUpdate({
+          spreadsheetId,
+          requestBody: {
+            data: updates,
+            valueInputOption: 'RAW'
+          }
+        });
+      } catch (error) {
+        console.error('Batch update failed:', error);
+        return res.status(500).json({
+          success: false,
+          message: 'Failed to update sheet data',
+          results,
+          notFoundVideos,
+          stats
+        });
+      }
+    }
+
+    // Always return success if the operation completed, even if no updates
+    const apiResponse: UpdateResponse = {
+      success: true, // Changed from stats.updated > 0
+      message: `Operation completed with ${stats.updated} updates`,
+      results,
+      notFoundVideos,
+      stats
+    };
+
+    res.status(200).json(apiResponse); // Always return 200 if operation completed
 
   } catch (error) {
     console.error('Error in API handler:', error);
-    return res.status(500).json({
+    res.status(500).json({
       success: false,
       message: error instanceof Error ? error.message : 'Internal server error',
-      error: process.env.NODE_ENV === 'development' ? String(error) : undefined
+      results: [],
+      notFoundVideos: [],
+      stats: {
+        updated: 0,
+        notFound: 0,
+        skipped: 0
+      }
     });
   }
 }

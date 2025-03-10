@@ -23,12 +23,12 @@ export default async function handler(
     const sheets = google.sheets({ version: 'v4', auth: auth as any });
 
     // Get all video names at once
-    const response = await sheets.spreadsheets.values.get({
+    const sheetResponse = await sheets.spreadsheets.values.get({
       spreadsheetId: process.env.GOOGLE_SHEETS_SPREADSHEET_ID!,
       range: 'Videos!N:W' // Get both name and embed columns
     });
 
-    const rows = response.data.values || [];
+    const rows = sheetResponse.data.values || [];
     const nameToRowMap = new Map<string, number>();
 
     // Create efficient lookup map
@@ -82,7 +82,7 @@ export default async function handler(
       });
     }
 
-    res.status(200).json({
+    const apiResponse = {
       success: true,
       message: `Batch ${batchIndex + 1}/${totalBatches} complete`,
       results: results.map(r => ({
@@ -96,7 +96,9 @@ export default async function handler(
         notFound: stats.notFound,
         skipped: stats.skipped
       }
-    });
+    };
+
+    res.status(200).json(apiResponse);
 
   } catch (error) {
     console.error('Error in API handler:', error);
