@@ -474,6 +474,7 @@ class BunnyService {
       const xhr = new XMLHttpRequest();
       
       await new Promise<void>((resolve, reject) => {
+        // تحديث التقدم
         xhr.upload.onprogress = (event) => {
           if (event.lengthComputable && onProgress) {
             const progress = Math.round((event.loaded / event.total) * 100);
@@ -481,6 +482,7 @@ class BunnyService {
           }
         };
 
+        // معالجة الاكتمال
         xhr.onload = () => {
           if (xhr.status >= 200 && xhr.status < 300) {
             resolve();
@@ -489,7 +491,16 @@ class BunnyService {
           }
         };
 
+        // معالجة الأخطاء
         xhr.onerror = () => reject(new Error("Upload failed"));
+
+        // دعم الإيقاف
+        if (signal) {
+          signal.addEventListener('abort', () => {
+            xhr.abort();
+            reject(new Error('Upload aborted'));
+          });
+        }
 
         xhr.open(
           "PUT",
@@ -506,6 +517,9 @@ class BunnyService {
 
       return createResponse;
     } catch (error) {
+      if (error.name === 'AbortError') {
+        throw error;
+      }
       console.error("Error uploading video:", error);
       throw error;
     }

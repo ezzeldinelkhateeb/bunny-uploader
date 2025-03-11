@@ -200,20 +200,40 @@ export class UploadManager {
 
   pauseUpload(fileId: string) {
     const item = this.findFile(fileId);
-    if (item && item.controller) {
-      item.controller.abort('pause'); // Use specific abort reason
+    if (item) {
+      // إيقاف الطلب الحالي
+      if (item.controller) {
+        item.controller.abort();
+      }
+      
+      // تعيين حالة الإيقاف المؤقت
       item.isPaused = true;
       item.status = "paused";
+      
+      // حفظ موقع التوقف الحالي
+      item.pausedAt = item.lastBytesLoaded;
+      
       this.updateGroups();
     }
   }
 
-  resumeUpload(fileId: string) {
+  async resumeUpload(fileId: string) {
     const item = this.findFile(fileId);
     if (item && item.isPaused) {
+      // إعادة تعيين حالة الملف
       item.isPaused = false;
       item.status = "processing";
-      this.uploadFile(item); // Restart the upload with new controller
+      item.controller = new AbortController();
+      
+      try {
+        // بدء الرفع من جديد مع بيانات الاستئناف
+        await this.uploadFile(item);
+      } catch (error) {
+        console.error('Failed to resume upload:', error);
+        item.status = "error";
+        item.errorMessage = "Failed to resume upload";
+      }
+      
       this.updateGroups();
     }
   }
@@ -250,6 +270,11 @@ export class UploadManager {
       item.isPaused = false;
       item.lastProgressUpdate = Date.now();
       item.lastBytesLoaded = 0;
+
+      // تأكد من أن العملية لم يتم إيقافها قبل بدء الرفع
+      if (item.isPaused) {
+        return;
+      }
 
       // Find library by name with case-insensitive and normalized comparison
       const libraries = await bunnyService.getLibraries();
@@ -325,6 +350,13 @@ export class UploadManager {
         item.controller.signal, // Pass the abort signal
         filenameWithoutExt // Pass filename without extension
       );
+
+      // تأكد من أن العملية لم يتم إيقافها بعد اكتمال الرفع
+      if (item.isPaused) {
+        item.status = "paused";
+        this.updateGroups();
+        return;
+      }
 
       item.status = "completed";
       item.progress = 100;

@@ -19,6 +19,8 @@ import CollectionSelector from "./CollectionSelector";
 import YearSelector from "./YearSelector";
 import ManualUploadZone from "./ManualUploadZone";
 import { googleSheetsService } from "../lib/google-sheets-service";
+import GroupedUpload from "./GroupedUpload";
+import { UploadQueue } from "../lib/upload-queue";
 
 interface Library {
   id: string;
@@ -53,10 +55,10 @@ interface VideoProcessingFormProps {
   collections?: Collection[];
   selectedLibrary?: string;
   selectedCollection?: string;
-  selectedYear?: "2024" | "2025";
+  selectedYear?: string;
   onLibraryChange?: (value: string) => void;
   onCollectionChange?: (value: string) => void;
-  onYearChange?: (value: "2024" | "2025") => void;
+  onYearChange?: (value: string) => void;
   disabled?: boolean;
 }
 
@@ -89,6 +91,7 @@ const VideoProcessingForm = ({
   const [lastCheckedIndex, setLastCheckedIndex] = useState<number | null>(null);
   const [isGloballyPaused, setIsGloballyPaused] = useState(false);
   const [isExporting, setIsExporting] = useState(false);
+  const uploadQueueRef = useRef<UploadQueue | null>(null);
 
   const updateSheetForVideo = async (videoTitle: string, videoGuid: string, libraryId: string) => {
     try {

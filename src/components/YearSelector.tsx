@@ -1,33 +1,53 @@
 import React from "react";
 import { Label } from "./ui/label";
-import { RadioGroup, RadioGroupItem } from "./ui/radio-group";
+import { Slider } from "./ui/slider";
+import { cn } from "@/lib/utils";
 
 interface YearSelectorProps {
-  selectedYear: "2024" | "2025";
-  onYearChange: (value: "2024" | "2025") => void;
+  selectedYear: string;
+  onYearChange: (value: string) => void;
 }
 
 const YearSelector: React.FC<YearSelectorProps> = ({
   selectedYear,
   onYearChange,
 }) => {
+  const startYear = 2023;
+  const endYear = 2033;
+  const years = Array.from(
+    { length: endYear - startYear + 1 }, 
+    (_, i) => (startYear + i).toString()
+  );
+  
+  const currentIndex = years.indexOf(selectedYear);
+
   return (
-    <div className="space-y-2">
-      <Label>Year</Label>
-      <RadioGroup
-        value={selectedYear}
-        onValueChange={(value) => onYearChange(value as "2024" | "2025")}
-        className="flex gap-4"
-      >
-        <div className="flex items-center space-x-2">
-          <RadioGroupItem value="2024" id="2024" />
-          <Label htmlFor="2024">2024</Label>
-        </div>
-        <div className="flex items-center space-x-2">
-          <RadioGroupItem value="2025" id="2025" />
-          <Label htmlFor="2025">2025</Label>
-        </div>
-      </RadioGroup>
+    <div className="space-y-6 py-4">
+      <div className="space-y-2">
+        <Label>Year: {selectedYear}</Label>
+        <Slider
+          value={[currentIndex]}
+          max={years.length - 1}
+          step={1}
+          onValueChange={(values) => onYearChange(years[values[0]])}
+          className="w-full"
+        />
+      </div>
+      
+      <div className="flex justify-between text-xs text-muted-foreground">
+        {years.map((year, index) => (
+          <span 
+            key={year}
+            className={cn(
+              "cursor-pointer hover:text-primary transition-colors",
+              year === selectedYear && "text-primary font-bold"
+            )}
+            onClick={() => onYearChange(year)}
+          >
+            {year}
+          </span>
+        ))}
+      </div>
     </div>
   );
 };

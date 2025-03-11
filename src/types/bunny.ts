@@ -17,7 +17,8 @@ export const VIDEO_RULES: VideoRule[] = [
   { pattern: /.*/, collection: "Full Videos Collection" },
 ];
 
-export const VALID_YEARS = ["2024", "2025"] as const;
+export const VALID_YEARS = ["2023", "2024", "2025"] as const;
+export type Year = typeof VALID_YEARS[number];
 
 export interface ProcessingStatus {
   status: "pending" | "processing" | "completed" | "error";

@@ -12,6 +12,9 @@ export interface ParsedFilename {
   lessonName: string;
   classNumber?: string;
   questionNumber?: string;
+  collectionGroup?: string; // لتجميع الملفات المتشابهة
+  parseConfidence: 'high' | 'medium' | 'low'; // مستوى الثقة في التحليل
+  suggestedLibraries?: string[]; // اقتراحات للمكتبات المحتملة
 }
 
 export function normalizeString(str: string): string {
@@ -31,10 +34,19 @@ export function parseFilename(filename: string): {
   try {
     const nameWithoutExt = filename.replace(/\.[^/.]+$/, "").trim();
     
-    // نمط أكثر مرونة للتعامل مع الاختلافات
-    const pattern = /^(?:(RE)-)?([JSM][1-6])(?:-+)?(?:T([12]))?(?:-+)?(?:U(\d+))?(?:-+)?(?:L(\d+))?(?:-+)?([A-Z]+(?:-[A-Z]+)*)-([P]\d{4})-([^-]+?)(?:-C(\d+))?(?:--?)?\{([^}]+)\}(?:-Q(\d+))?$/i;
+    // Enhanced pattern to handle more variations
+    const pattern = /^(?:(RE)-)?([JSM][1-6])(?:-+)?(?:T([12]))?(?:-+)?(?:U(\d+))?(?:-+)?(?:L(\d+))?(?:-+)?([A-Z-]+)-([P]\d{4})-([^-{]+?)(?:-C(\d+))?(?:-+)?\{([^}]+)\}(?:-Q(\d+))?(?:-([A-Z]+))?$/i;
     
-    const match = nameWithoutExt.match(pattern);
+    // Alternative pattern for different format
+    const alternativePattern = /^([JSM][1-6])(?:-+)?T([12])(?:-+)?(?:U(\d+))?(?:-+)?(?:L(\d+))?(?:-+)?([A-Z-]+)(?:-[A-Z]+)?-([P]\d{4})-([^-{]+?)(?:-C(\d+))?\{(.+?)\}(?:-Q(\d+))?(?:-([A-Z]+))?$/i;
+    
+    let match = nameWithoutExt.match(pattern);
+    let isAlternativeFormat = false;
+
+    if (!match) {
+      match = nameWithoutExt.match(alternativePattern);
+      isAlternativeFormat = true;
+    }
 
     if (!match) {
       console.warn(`Failed to match filename: ${filename}`);
@@ -44,7 +56,7 @@ export function parseFilename(filename: string): {
       };
     }
 
-    const [
+    let [
       ,
       isRevision,
       academicYear,
@@ -56,13 +68,22 @@ export function parseFilename(filename: string): {
       teacherName,
       classNumber,
       lessonName,
-      questionNumber
-    ] = match;
+      questionNumber,
+      langSuffix
+    ] = isAlternativeFormat 
+      ? [null, null, ...match] 
+      : match;
 
-    // تحسين معالجة اسم المادة واللغة
+    // Handle branch and language parts
     const branchParts = branch.split('-');
     const mainBranch = branchParts[0];
-    const lang = branchParts[1] || '';
+    let lang = branchParts[1] || langSuffix || '';
+
+    // Clean up teacher name
+    teacherName = teacherName.trim().replace(/\s+/g, ' ');
+
+    // Handle lesson name with Arabic text
+    lessonName = lessonName.trim();
 
     return {
       parsed: {
@@ -73,10 +94,13 @@ export function parseFilename(filename: string): {
         lesson: lesson ? `L${lesson}` : undefined,
         branch: `${mainBranch}${lang ? `-${lang}` : ''}`,
         teacherCode: teacherCode.toUpperCase(),
-        teacherName: teacherName.trim(),
-        lessonName: lessonName.trim(),
+        teacherName,
+        lessonName,
         classNumber,
-        questionNumber
+        questionNumber,
+        collectionGroup: `${academicYear}-T${termNum}`,
+        parseConfidence: 'high',
+        suggestedLibraries: getSuggestedLibraries({ academicYear, branch }, [])
       }
     };
   } catch (error) {
@@ -114,6 +138,39 @@ export function findMatchingLibrary(libraryName: string, libraries: LibraryInfo[
   }
 
   return match || null;
+}
+
+export function findMatchingGroup(filename: string): string | null {
+  try {
+    // استخراج المعرف الأساسي للمجموعة
+    const basicPattern = /^([JSM][1-6])[-_]?T([12])[-_]?(.*?)\{/;
+    const match = filename.match(basicPattern);
+    
+    if (match) {
+      const [, year, term] = match;
+      return `${year}-T${term}`;
+    }
+    
+    return null;
+  } catch (error) {
+    console.warn("Error finding group for:", filename);
+    return null;
+  }
+}
+
+export function getSuggestedLibraries(parsed: Partial<ParsedFilename>, libraries: LibraryInfo[]): string[] {
+  if (!parsed.academicYear || !parsed.branch) return [];
+
+  return libraries
+    .filter(lib => {
+      const libName = lib.name.toLowerCase();
+      return (
+        libName.includes(parsed.academicYear.toLowerCase()) && 
+        libName.includes(parsed.branch.toLowerCase())
+      );
+    })
+    .map(lib => lib.name)
+    .slice(0, 5); // اقترح أول 5 مكتبات متطابقة
 }
 
 // تعريف الكولكشنز الثابتة
@@ -183,4 +240,36 @@ export function determineLibrary(parsed: ParsedFilename): string {
   ].filter(Boolean); // يزيل القيم الفارغة
 
   return libraryParts.map(p => normalizeString(p)).join('-');
+}
+
+function normalizeFileName(filename: string): string {
+  return filename
+    // تصحيح الفواصل المتعددة
+    .replace(/[-_\s]+/g, '-')
+    // تصحيح الأقواس
+    .replace(/[\[\]()]/g, '')
+    // تنظيف المسافات الزائدة
+    .trim();
+}
+
+export function attemptFilenameRecovery(filename: string): {
+  recovered: string;
+  confidence: 'high' | 'medium' | 'low';
+} {
+  const normalized = normalizeFileName(filename);
+  let confidence: 'high' | 'medium' | 'low' = 'low';
+  
+  // محاولة استخراج المعلومات الأساسية
+  const basicInfo = normalized.match(/([JSM][1-6]).*?(T[12])/i);
+  if (basicInfo) {
+    confidence = 'medium';
+    // إذا وجدنا المعلومات الأساسية، نحاول إعادة تشكيل اسم الملف
+    const [year, term] = basicInfo;
+    // ... المزيد من المنطق لاسترداد المعلومات
+  }
+
+  return {
+    recovered: normalized,
+    confidence
+  };
 }

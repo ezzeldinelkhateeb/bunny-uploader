@@ -4,20 +4,43 @@ import {
   ProcessingStatus,
 } from "../types/bunny";
 import { bunnyService } from "./bunny-service";
+import { parseFilename, findMatchingGroup, getSuggestedLibraries } from './filename-parser';
+
+interface ParsedFilename {
+  year?: string;
+  term?: string;
+  subject?: string;
+  teacherCode?: string;
+  suggestedLibraries?: string[]; // Add this field
+}
 
 interface QueueItem {
   id: string;
   file: File;
-  libraryId: string;
-  collectionId: string;
-  status: ProcessingStatus;
+  parsed: ParsedFilename | null;
+  libraryId?: string;
+  collectionId?: string;
+  status: {
+    status: "pending" | "processing" | "completed" | "error";
+    progress: number;
+    error?: string;
+  };
   attempts: number;
+}
+
+interface UploadGroup {
+  id: string;
+  files: QueueItem[];
+  collectionId: string;
+  suggestedLibraries: string[];
+  status: 'pending' | 'needsLibrary' | 'ready';
 }
 
 export class UploadQueue {
   private queue: QueueItem[] = [];
   private processing: Set<string> = new Set();
   private config: VideoUploadConfig;
+  private groups: Map<string, UploadGroup> = new Map();
 
   constructor(config: Partial<VideoUploadConfig> = {}) {
     this.config = { ...DEFAULT_UPLOAD_CONFIG, ...config };
@@ -36,6 +59,7 @@ export class UploadQueue {
     this.queue.push({
       id,
       file,
+      parsed: null,
       libraryId,
       collectionId,
       status: { status: "pending", progress: 0 },
@@ -44,6 +68,71 @@ export class UploadQueue {
 
     this.processQueue(); // بدء المعالجة
     return id;
+  }
+
+  addFile(file: File): string {
+    const parsed = parseFilename(file.name);
+    const groupId = findMatchingGroup(file.name);
+    
+    if (!this.groups.has(groupId)) {
+      this.groups.set(groupId, {
+        id: groupId,
+        files: [],
+        collectionId: '', // سيتم تحديده لاحقاً
+        suggestedLibraries: [],
+        status: 'pending'
+      });
+    }
+    
+    const group = this.groups.get(groupId)!;
+    
+    // إضافة الملف للمجموعة
+    const queueItem: QueueItem = {
+      id: `${Date.now()}-${Math.random().toString(36).substr(2, 9)}`,
+      file,
+      parsed: parsed,
+      status: { status: "pending", progress: 0 },
+      attempts: 0
+    };
+    
+    group.files.push(queueItem);
+    
+    // Update group's suggested libraries
+    if (parsed?.suggestedLibraries?.length) {
+      group.suggestedLibraries = parsed.suggestedLibraries;
+    }
+    
+    // تحديث حالة المجموعة
+    this.updateGroupStatus(groupId);
+    
+    return queueItem.id;
+  }
+
+  private updateGroupStatus(groupId: string) {
+    const group = this.groups.get(groupId);
+    if (!group) return;
+
+    const allFilesParsed = group.files.every(item => item.parsed);
+    const hasLibrary = group.files.some(item => item.parsed?.suggestedLibraries?.length > 0);
+
+    group.status = allFilesParsed 
+      ? (hasLibrary ? 'ready' : 'needsLibrary')
+      : 'pending';
+  }
+
+  async processGroup(groupId: string, selectedLibrary?: string) {
+    const group = this.groups.get(groupId);
+    if (!group) return;
+
+    for (const item of group.files) {
+      if (selectedLibrary) {
+        // استخدام المكتبة المحددة يدوياً
+        await this.uploadFile(item, selectedLibrary, group.collectionId);
+      } else if (item.parsed?.suggestedLibraries?.[0]) {
+        // استخدام أول مكتبة مقترحة
+        await this.uploadFile(item, item.parsed.suggestedLibraries[0], group.collectionId);
+      }
+    }
   }
 
   /**
@@ -90,16 +179,20 @@ export class UploadQueue {
    * رفع الملف إلى Bunny.net
    * @param item - العنصر المراد رفعه
    */
-  private async uploadFile(item: QueueItem): Promise<void> {
-    const { file, libraryId } = item;
+  private async uploadFile(item: QueueItem, selectedLibrary: string, collectionId: string): Promise<void> {
+    if (!selectedLibrary) throw new Error("Library ID is required");
+    if (!collectionId) throw new Error("Collection ID is required");
 
-    // تحديث حالة التقدم أثناء الرفع
     const onProgress = (progress: number) => {
       item.status = { status: "processing", progress };
     };
 
-    // رفع الملف باستخدام bunnyService
-    await bunnyService.uploadVideo(file, libraryId, onProgress);
+    await bunnyService.uploadVideo(
+      item.file,
+      selectedLibrary,
+      onProgress,
+      collectionId
+    );
   }
 
   /**

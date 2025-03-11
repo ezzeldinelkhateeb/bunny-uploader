@@ -18,7 +18,7 @@ const Home = () => {
   const [collections, setCollections] = React.useState<Collection[]>([]);
   const [selectedLibrary, setSelectedLibrary] = React.useState("");
   const [selectedCollection, setSelectedCollection] = React.useState("");
-  const [selectedYear, setSelectedYear] = React.useState<"2025" | "2024">("2025");
+  const [selectedYear, setSelectedYear] = React.useState<string>("2025");
 
   // Initialize bunny service and fetch libraries on mount
   React.useEffect(() => {
