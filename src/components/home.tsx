@@ -2,6 +2,7 @@ import React from "react";
 import { Card } from "./ui/card";
 import VideoProcessingForm from "./VideoProcessingForm";
 import { bunnyService } from "../lib/bunny-service";
+import { Year } from "../types/common";
 
 interface Library {
   id: string;
@@ -18,7 +19,7 @@ const Home = () => {
   const [collections, setCollections] = React.useState<Collection[]>([]);
   const [selectedLibrary, setSelectedLibrary] = React.useState("");
   const [selectedCollection, setSelectedCollection] = React.useState("");
-  const [selectedYear, setSelectedYear] = React.useState<string>("2025");
+  const [selectedYear, setSelectedYear] = React.useState<Year>("2025");
 
   // Initialize bunny service and fetch libraries on mount
   React.useEffect(() => {

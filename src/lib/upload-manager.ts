@@ -3,6 +3,7 @@ import {
   parseFilename,
   determineLibrary,
   determineCollection,
+  findMatchingLibrary, // Add this import
 } from "./filename-parser";
 import type { Year } from "../types/common";
 import { showToast } from "../hooks/use-toast" // Fix import path
@@ -15,19 +16,25 @@ interface QueueItem {
   filename: string;
   status: UploadStatus;
   progress: number;
-  errorMessage?: string;
+  errorMessage?: string;  // Add this line
   controller?: AbortController; // Add controller property
   isPaused?: boolean; // Add isPaused property
   uploadSpeed?: number;  // Speed in bytes per second
   lastProgressUpdate?: number;  // Timestamp of last progress update
   lastBytesLoaded?: number;    // Last known bytes loaded
   startTime?: number;
+  pausedAt?: number;
   metadata: {
     library: string;
     collection: string;
     year: string;
     needsManualSelection?: boolean;
     reason?: string; // Add this to allow reason
+    suggestedLibraries?: Array<{
+      id: string;
+      name: string;
+      confidence: number;
+    }>;
   };
 }
 
@@ -38,6 +45,11 @@ interface UploadGroup {
   needsManualSelection?: boolean;
 }
 
+interface LibraryMatch {
+  library: string;
+  score: number;
+}
+
 export class UploadManager {
   private queue: QueueItem[] = [];
   private failedItems: QueueItem[] = [];  // للملفات التي فشل تحديد مكتبتها
@@ -45,9 +57,15 @@ export class UploadManager {
   private onVideoUploaded?: (videoTitle: string, videoGuid: string, libraryId: string) => void;
   private batchSize = 5; // Process videos in batches of 5
   private processingCount = 0;
-  private maxConcurrent = 1; // تعديل ليسمح برفع فيديو واحد فقط
+  private maxConcurrent = 3; // زيادة عدد الملفات المتزامنة
+  private chunkSize = 10 * 1024 * 1024; // زيادة حجم ال chunk ل 10 ميجا
+  private uploadChunkRetries = 3; // عدد محاولات إعادة رفع ال chunk
+  private uploadRetryDelay = 1000; // تأخير بين المحاولات (1 ثانية)
   private isGloballyPaused = false;
   private isProcessing = false;
+  private failedUploads: Set<string> = new Set(); // إضافة قائمة للملفات الفاشلة
+  private maxRetries = 3; // عدد محاولات إعادة المحاولة
+  private retryDelay = 5000; // تأخير 5 ثواني بين المحاولات
 
   constructor(
     onQueueUpdate: (groups: UploadGroup[]) => void,
@@ -55,6 +73,55 @@ export class UploadManager {
   ) {
     this.onQueueUpdate = onQueueUpdate;
     this.onVideoUploaded = onVideoUploaded;
+  }
+
+  private async findBestLibraryMatch(targetName: string, libraries: any[]): Promise<LibraryMatch | null> {
+    // Normalize the target name
+    const normalizedTarget = targetName.toLowerCase()
+      .replace(/\s+/g, '')
+      .replace(/-/g, '');
+    
+    let bestMatch: LibraryMatch | null = null;
+    let highestScore = 0;
+
+    for (const lib of libraries) {
+      const normalizedLibName = lib.name.toLowerCase()
+        .replace(/\s+/g, '')
+        .replace(/-/g, '');
+
+      // Calculate similarity score
+      let score = 0;
+      const teacherCode = targetName.match(/P\d{4}/)?.[0];
+      const libTeacherCode = lib.name.match(/P\d{4}/)?.[0];
+      
+      // Exact teacher code match is highest priority
+      if (teacherCode && libTeacherCode && teacherCode === libTeacherCode) {
+        score += 50;
+      }
+
+      // Check for academic year match (M1, S1, etc)
+      const academicYear = targetName.match(/^[MS][1-3]/)?.[0];
+      if (academicYear && lib.name.includes(academicYear)) {
+        score += 30;
+      }
+
+      // Add points for each matching character in sequence
+      let matchingChars = 0;
+      for (let i = 0; i < normalizedTarget.length && i < normalizedLibName.length; i++) {
+        if (normalizedTarget[i] === normalizedLibName[i]) {
+          matchingChars++;
+        }
+      }
+      score += (matchingChars / Math.max(normalizedTarget.length, normalizedLibName.length)) * 20;
+
+      if (score > highestScore) {
+        highestScore = score;
+        bestMatch = { library: lib.name, score };
+      }
+    }
+
+    // Only return match if score is above threshold
+    return highestScore >= 70 ? bestMatch : null;
   }
 
   previewFiles(files: File[], selectedYear: string) {
@@ -66,7 +133,7 @@ export class UploadManager {
         }
 
         const libraryName = determineLibrary(parsed.parsed);
-        const collectionResult = determineCollection(parsed.parsed, selectedYear as "2024" | "2025");
+        const collectionResult = determineCollection(parsed.parsed); // Remove second argument
 
         const queueItem: QueueItem = {
           id: `${Date.now()}-${Math.random().toString(36).substring(2)}`,
@@ -76,21 +143,17 @@ export class UploadManager {
           progress: 0,
           metadata: {
             library: libraryName,
-            collection: collectionResult.collection, // Use just the collection name
+            collection: collectionResult.name, // Use just the collection name
             year: selectedYear,
-            needsManualSelection: false,
+            needsManualSelection: true, // Default to true until we find a match
             reason: collectionResult.reason // Optionally store the reason if needed
           }
         };
 
-        this.queue.push(queueItem);
+        this.failedItems.push(queueItem);
         
-        // Show informative toast with the reason
-        showToast({
-          title: "Collection Selected",
-          description: `"${file.name}" will be uploaded to "${collectionResult.collection}" (${collectionResult.reason})`,
-        });
-
+        // Try to find matching library asynchronously
+        this.tryMatchLibrary(queueItem);
       } catch (error) {
         // Handle failed items as before
         const failedItem: QueueItem = {
@@ -118,15 +181,54 @@ export class UploadManager {
     this.updateGroups();
   }
 
+  private async tryMatchLibrary(item: QueueItem) {
+    try {
+      const libraries = await bunnyService.getLibraries();
+      const parseResult = parseFilename(item.filename);
+      
+      if (!parseResult.parsed) return;
+
+      const match = findMatchingLibrary(parseResult.parsed, libraries);
+
+      // Require higher confidence threshold or multiple good matches for auto-selection
+      if (match.confidence >= 90) {
+        // Move from failed items to queue with matched library
+        const index = this.failedItems.findIndex(f => f.id === item.id);
+        if (index !== -1) {
+          const [movedItem] = this.failedItems.splice(index, 1);
+          movedItem.metadata.needsManualSelection = false;
+          movedItem.metadata.library = match.library!.name;
+          this.queue.push(movedItem);
+          
+          showToast({
+            title: "Library Matched",
+            description: `Matched "${item.filename}" to library "${match.library!.name}" (${match.confidence.toFixed(0)}% confidence)`,
+            variant: "success"
+          });
+        }
+      } else {
+        // Store suggested libraries for manual selection
+        item.metadata.needsManualSelection = true;
+        item.metadata.suggestedLibraries = match.alternatives.map(lib => ({
+          id: lib.id,
+          name: lib.name,
+          confidence: match.confidence
+        }));
+      }
+    } catch (error) {
+      console.error(`Failed to match library for ${item.filename}:`, error);
+    }
+    this.updateGroups();
+  }
+
   async startUpload(files: File[], selectedYear: Year) {
-    this.sortQueue(); // Sort before starting upload
+    this.sortQueue();
     
     for (const item of this.queue) {
       if (this.isGloballyPaused) {
-        // توقف إذا كان هناك إيقاف شامل
         item.status = "paused";
         this.updateGroups();
-        break;
+        continue;
       }
 
       try {
@@ -134,16 +236,85 @@ export class UploadManager {
         this.updateGroups();
 
         await this.uploadFile(item);
-
         item.status = "completed";
       } catch (error) {
         if (error.name === 'AbortError') {
-          break; // توقف عن المتابعة في حالة الإيقاف
+          break;
         }
         item.status = "error";
         item.errorMessage = error instanceof Error ? error.message : "خطأ غير معروف";
+        this.failedUploads.add(item.id);
       }
       this.updateGroups();
+    }
+
+    const allCompleted = this.queue.every(item => 
+      item.status === "completed" || item.status === "error"
+    );
+
+    if (allCompleted) {
+      // محاولة إعادة رفع الملفات الفاشلة
+      if (this.failedUploads.size > 0) {
+        await this.retryFailedUploads();
+      }
+
+      const stats = this.getUploadStats();
+      showToast({
+        title: "🎉 All Uploads Completed",
+        description: `Successfully uploaded ${stats.success} files\n${stats.failed} failed\nTotal time: ${stats.totalTime}`,
+        variant: "success",
+        duration: 5000
+      });
+    }
+  }
+
+  private async retryFailedUploads() {
+    const failedItems = this.queue.filter(item => this.failedUploads.has(item.id));
+    
+    if (failedItems.length === 0) return;
+
+    showToast({
+      title: "⚠️ Retrying Failed Uploads",
+      description: `Attempting to retry ${failedItems.length} failed uploads`,
+      variant: "warning"
+    });
+
+    await new Promise(resolve => setTimeout(resolve, this.retryDelay));
+
+    for (const item of failedItems) {
+      let retryCount = 0;
+      let success = false;
+
+      while (retryCount < this.maxRetries && !success) {
+        try {
+          item.status = "processing";
+          item.errorMessage = `Retry attempt ${retryCount + 1}/${this.maxRetries}`;
+          this.updateGroups();
+
+          await this.uploadFile(item);
+          
+          item.status = "completed";
+          this.failedUploads.delete(item.id);
+          success = true;
+          
+          showToast({
+            title: "✅ Retry Successful",
+            description: `Successfully uploaded ${item.filename}`,
+            variant: "success"
+          });
+        } catch (error) {
+          retryCount++;
+          if (retryCount < this.maxRetries) {
+            await new Promise(resolve => setTimeout(resolve, this.retryDelay));
+          }
+        }
+      }
+
+      if (!success) {
+        item.status = "error";
+        item.errorMessage = `Failed after ${this.maxRetries} retry attempts`;
+        this.updateGroups();
+      }
     }
   }
 
@@ -331,24 +502,23 @@ export class UploadManager {
       const response = await bunnyService.uploadVideo(
         item.file,
         library.id,
-        (progress, bytesLoaded) => {
+        (progress, speed) => {
           if (this.isGloballyPaused) return;
-          const now = Date.now();
-          if (item.lastProgressUpdate && item.lastBytesLoaded !== undefined) {
-            const timeDiff = (now - item.lastProgressUpdate) / 1000; // Convert to seconds
-            const bytesDiff = bytesLoaded - item.lastBytesLoaded;
-            item.uploadSpeed = bytesDiff / timeDiff; // Bytes per second
-          }
           
           item.progress = progress;
-          item.lastProgressUpdate = now;
-          item.lastBytesLoaded = bytesLoaded;
+          item.uploadSpeed = speed;
           this.updateGroups();
+          
+          // إذا كانت السرعة منخفضة جداً، حاول إعادة الاتصال
+          if (speed < 500000) { // أقل من 500KB/s
+            console.warn('Upload speed is very low, considering retry...');
+          }
         },
         collectionId,
         accessToken,
         item.controller.signal, // Pass the abort signal
-        filenameWithoutExt // Pass filename without extension
+        filenameWithoutExt, // Pass filename without extension
+        this.chunkSize // إضافة حجم القطع كمعامل جديد
       );
 
       // تأكد من أن العملية لم يتم إيقافها بعد اكتمال الرفع
@@ -440,27 +610,47 @@ export class UploadManager {
     collectionId: string,
     selectedYear: string
   ) {
-    // نفس منطق الرفع التلقائي
-    for (const item of this.queue) {
+    // Create queue items for manual uploads
+    const manualItems = files.map(file => ({
+      id: `${Date.now()}-${Math.random().toString(36).substring(2)}`,
+      file,
+      filename: file.name,
+      status: "pending" as UploadStatus,
+      progress: 0,
+      errorMessage: undefined, // Add this line to include the errorMessage property
+      controller: undefined,
+      isPaused: false,
+      metadata: {
+        library: libraryId,
+        collection: collectionId,
+        year: selectedYear,
+        needsManualSelection: false
+      }
+    }));
+
+    // Add to main queue
+    this.queue.push(...manualItems);
+    this.updateGroups();
+
+    // Process uploads
+    for (const item of manualItems) {
       if (this.isGloballyPaused) {
         item.status = "paused";
         this.updateGroups();
-        break;
+        continue;
       }
 
       try {
         item.status = "processing";
         this.updateGroups();
-
         await this.uploadFile(item);
-
         item.status = "completed";
       } catch (error) {
         if (error.name === 'AbortError') {
           break;
         }
         item.status = "error";
-        item.errorMessage = error instanceof Error ? error.message : "خطأ غير معروف";
+        item.errorMessage = error instanceof Error ? error.message : "Upload failed";
       }
       this.updateGroups();
     }
@@ -525,25 +715,9 @@ export class UploadManager {
   }
 
   clearQueue() {
-    // Only clear if all uploads are completed or failed
-    const hasActiveUploads = this.queue.some(item => 
-      item.status === "processing" || item.status === "pending"
-    );
-
-    if (hasActiveUploads) {
-      showToast({
-        title: "⚠️ Warning",
-        description: "Cannot clear queue while uploads are in progress",
-        variant: "warning",
-        duration: 3000
-      });
-      return false;
-    }
-
     this.queue = [];
     this.failedItems = [];
     this.updateGroups();
-    return true;
   }
 
   private getUploadStats() {

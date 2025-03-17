@@ -387,19 +387,35 @@ class BunnyService {
         }),
       );
 
-      // Sort videos alphabetically with natural sorting for "Q" numbers, matching Python backend
+      // Enhanced sorting function
       return videos.sort((a: Video, b: Video) => {
-        const baseNameA = a.title.split("Q")[0];
-        const baseNameB = b.title.split("Q")[0];
+        // Extract lecture numbers
+        const getLectureNumber = (title: string) => {
+          const match = title.match(/Lecture (\d+)/i);
+          return match ? parseInt(match[1]) : 0;
+        };
 
-        if (baseNameA !== baseNameB) {
-          return baseNameA.localeCompare(baseNameB);
+        // Extract question numbers
+        const getQuestionNumber = (title: string) => {
+          const match = title.match(/Q(\d+)/i);
+          return match ? parseInt(match[1]) : 0;
+        };
+
+        // Get lecture and question numbers for both videos
+        const lectureA = getLectureNumber(a.title);
+        const lectureB = getLectureNumber(b.title);
+        const questionA = getQuestionNumber(a.title);
+        const questionB = getQuestionNumber(b.title);
+
+        // Sort by lecture number first (descending)
+        if (lectureA !== lectureB) {
+          return lectureB - lectureA; // Higher lecture numbers first
         }
 
-        const numA = parseInt(a.title.match(/Q(\d+)/)?.[1] || "0");
-        const numB = parseInt(b.title.match(/Q(\d+)/)?.[1] || "0");
-        return numA - numB;
+        // Then sort by question number
+        return questionA - questionB;
       });
+
     } catch (error) {
       console.error("Error fetching videos:", error);
       throw error;
@@ -444,7 +460,8 @@ class BunnyService {
     collectionId?: string,
     accessToken?: string, // Add accessToken parameter
     signal?: AbortSignal, // Add abort signal support
-    customFilename?: string // Add parameter for custom filename
+    customFilename?: string, // Add parameter for custom filename
+    chunkSize: number = 10 * 1024 * 1024 // زيادة حجم ال chunk ل 10 ميجا
   ): Promise<{ guid: string; title: string }> {
     try {
       if (!libraryId) throw new Error("Library ID is required for upload");
@@ -474,13 +491,42 @@ class BunnyService {
       const xhr = new XMLHttpRequest();
       
       await new Promise<void>((resolve, reject) => {
-        // تحديث التقدم
+        // First open the connection
+        xhr.open(
+          "PUT",
+          `${this.videoBaseUrl}/library/${libraryId}/videos/${createResponse.guid}`,
+          true
+        );
+
+        // Then set headers after opening connection
+        xhr.responseType = 'blob';
+        xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+        xhr.setRequestHeader('X-Upload-Content-Length', file.size.toString());
+        
+        if (accessToken) {
+          xhr.setRequestHeader("AccessKey", accessToken);
+        }
+
+        // Set up event handlers
         xhr.upload.onprogress = (event) => {
           if (event.lengthComputable && onProgress) {
             const progress = Math.round((event.loaded / event.total) * 100);
             onProgress(progress, event.loaded);
           }
         };
+
+        // تحسين الأداء
+        xhr.responseType = 'blob';
+        xhr.timeout = 0; // إلغاء التوقيت للملفات الكبيرة
+        
+        // إضافة headers لتحسين الأداء
+        xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+        xhr.setRequestHeader('X-Upload-Content-Length', file.size.toString());
+        
+        // إضافة حجم القطع
+        if (chunkSize) {
+          xhr.setRequestHeader('X-Upload-Content-Length', chunkSize.toString());
+        }
 
         // معالجة الاكتمال
         xhr.onload = () => {
@@ -507,11 +553,54 @@ class BunnyService {
           `${this.videoBaseUrl}/library/${libraryId}/videos/${createResponse.guid}`,
           true
         );
-        
+
+        // تحسينات الأداء
+        xhr.responseType = 'blob';
+        xhr.timeout = 0;
+
+        // إضافة headers مهمة للأداء
+        xhr.setRequestHeader('Content-Type', 'application/octet-stream');
+        xhr.setRequestHeader('X-Upload-Content-Length', file.size.toString());
+        xhr.setRequestHeader('Accept', '*/*');
+        xhr.setRequestHeader('Cache-Control', 'no-cache');
+
+        // تفعيل ضغط الداتا
+        xhr.setRequestHeader('Accept-Encoding', 'gzip, deflate, br');
+
         if (accessToken) {
           xhr.setRequestHeader("AccessKey", accessToken);
         }
 
+        // تحسين معالجة التقدم
+        let lastLoaded = 0;
+        let lastTime = Date.now();
+        const updateInterval = 100; // تحديث كل 100ms فقط
+
+        xhr.upload.onprogress = (event) => {
+          if (!event.lengthComputable) return;
+          
+          const now = Date.now();
+          if (now - lastTime < updateInterval) return;
+
+          const loaded = event.loaded;
+          const total = event.total;
+          const progress = Math.round((loaded / total) * 100);
+          
+          // حساب السرعة
+          const timeDiff = (now - lastTime) / 1000; // بالثواني
+          const bytesDiff = loaded - lastLoaded;
+          const speed = bytesDiff / timeDiff; // bytes/second
+
+          if (onProgress) {
+            onProgress(progress, speed);
+          }
+
+          lastLoaded = loaded;
+          lastTime = now;
+        };
+
+        // إرسال الملف بأكبر buffer ممكن
+        const bufferSize = 512 * 1024; // 512KB buffer
         xhr.send(file);
       });
 

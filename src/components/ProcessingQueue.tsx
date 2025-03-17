@@ -5,6 +5,7 @@ import { Button } from "./ui/button";
 import { AlertDialog, AlertDialogContent, AlertDialogAction, AlertDialogCancel, AlertDialogDescription, AlertDialogFooter, AlertDialogHeader, AlertDialogTitle, AlertDialogTrigger } from "./ui/alert-dialog";
 import { Pause, Play, XCircle } from "lucide-react";
 import { formatBytes } from "../lib/utils";
+import { Select, SelectTrigger, SelectValue, SelectContent, SelectItem } from "./ui/select";
 
 interface Library {
   id: string;
@@ -136,6 +137,44 @@ const ProcessingQueue: React.FC<ProcessingQueueProps> = ({
                   <div key={item.id} className="space-y-2">
                     <div className="flex justify-between items-center gap-2">
                       <span className="text-sm truncate flex-1">{item.filename}</span>
+                      
+                      {/* Add library selector for items needing manual selection */}
+                      {item.metadata.needsManualSelection && (
+                        <div className="flex items-center gap-2 min-w-[300px]">
+                          <Select 
+                            onValueChange={(value) => onUpdateMetadata(item.id, value, item.metadata.collection)}
+                            value={item.metadata.library || ""}
+                          >
+                            <SelectTrigger className="w-[200px]">
+                              <SelectValue placeholder="Select Library" />
+                            </SelectTrigger>
+                            <SelectContent>
+                              {libraries.map((lib) => (
+                                <SelectItem key={lib.id} value={lib.name}>
+                                  <div className="flex items-center justify-between w-full">
+                                    <span>{lib.name}</span>
+                                    {/* Show match confidence if suggested */}
+                                    {item.metadata.suggestedLibraries?.find(l => l.id === lib.id) && (
+                                      <span className="text-xs text-green-500 ml-2">
+                                        {Math.round(item.metadata.suggestedLibraries.find(l => l.id === lib.id)?.confidence || 0)}% match
+                                      </span>
+                                    )}
+                                  </div>
+                                </SelectItem>
+                              ))}
+                            </SelectContent>
+                          </Select>
+
+                          <Button 
+                            variant="outline" 
+                            size="sm"
+                            onClick={() => onUpdateMetadata(item.id, item.metadata.library, item.metadata.collection)}
+                          >
+                            Apply
+                          </Button>
+                        </div>
+                      )}
+
                       <div className="flex items-center gap-2">
                         {item.uploadSpeed > 0 && (
                           <span className="text-xs text-gray-500">

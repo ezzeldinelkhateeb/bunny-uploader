@@ -4,14 +4,14 @@ import {
   ProcessingStatus,
 } from "../types/bunny";
 import { bunnyService } from "./bunny-service";
-import { parseFilename, findMatchingGroup, getSuggestedLibraries } from './filename-parser';
+import { parseFilename } from './filename-parser';
+import { ParseResult } from '../types/filename-parser';
 
 interface ParsedFilename {
-  year?: string;
+  type?: 'RE' | 'QV' | 'FULL';
+  academicYear?: string;
   term?: string;
-  subject?: string;
-  teacherCode?: string;
-  suggestedLibraries?: string[]; // Add this field
+  suggestedLibraries?: string[];
 }
 
 interface QueueItem {
@@ -71,9 +71,17 @@ export class UploadQueue {
   }
 
   addFile(file: File): string {
-    const parsed = parseFilename(file.name);
+    const parseResult = parseFilename(file.name);
     const groupId = findMatchingGroup(file.name);
     
+    // Transform ParseResult to ParsedFilename
+    const parsed: ParsedFilename = {
+      type: parseResult.parsed?.type,
+      academicYear: parseResult.parsed?.academicYear,
+      term: parseResult.parsed?.term,
+      suggestedLibraries: parseResult.libraryMatch?.alternatives?.map(lib => lib.id)
+    };
+
     if (!this.groups.has(groupId)) {
       this.groups.set(groupId, {
         id: groupId,
@@ -98,8 +106,8 @@ export class UploadQueue {
     group.files.push(queueItem);
     
     // Update group's suggested libraries
-    if (parsed?.suggestedLibraries?.length) {
-      group.suggestedLibraries = parsed.suggestedLibraries;
+    if (parseResult.libraryMatch?.alternatives?.length) {
+      group.suggestedLibraries = parseResult.libraryMatch.alternatives.map(lib => lib.id);
     }
     
     // تحديث حالة المجموعة
@@ -125,12 +133,12 @@ export class UploadQueue {
     if (!group) return;
 
     for (const item of group.files) {
+      if (!item.libraryId || !item.collectionId) return;
+      
       if (selectedLibrary) {
-        // استخدام المكتبة المحددة يدوياً
-        await this.uploadFile(item, selectedLibrary, group.collectionId);
+        await this.uploadFile(item);
       } else if (item.parsed?.suggestedLibraries?.[0]) {
-        // استخدام أول مكتبة مقترحة
-        await this.uploadFile(item, item.parsed.suggestedLibraries[0], group.collectionId);
+        await this.uploadFile(item);
       }
     }
   }
@@ -179,9 +187,9 @@ export class UploadQueue {
    * رفع الملف إلى Bunny.net
    * @param item - العنصر المراد رفعه
    */
-  private async uploadFile(item: QueueItem, selectedLibrary: string, collectionId: string): Promise<void> {
-    if (!selectedLibrary) throw new Error("Library ID is required");
-    if (!collectionId) throw new Error("Collection ID is required");
+  private async uploadFile(item: QueueItem): Promise<void> {
+    if (!item.libraryId) throw new Error("Library ID is required");
+    if (!item.collectionId) throw new Error("Collection ID is required");
 
     const onProgress = (progress: number) => {
       item.status = { status: "processing", progress };
@@ -189,9 +197,9 @@ export class UploadQueue {
 
     await bunnyService.uploadVideo(
       item.file,
-      selectedLibrary,
+      item.libraryId,
       onProgress,
-      collectionId
+      item.collectionId
     );
   }
 
@@ -212,4 +220,10 @@ export class UploadQueue {
     this.queue = [];
     this.processing.clear();
   }
+}
+
+// Add these helper functions
+function findMatchingGroup(filename: string): string {
+  // Simple implementation - you can enhance this
+  return filename.split('-')[0];
 }
